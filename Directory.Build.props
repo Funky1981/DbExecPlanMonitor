@@ -1,0 +1,28 @@
+<Project>
+  <!-- 
+    Directory.Build.props - Shared MSBuild properties for all projects
+    This file is automatically imported by all .csproj files in child directories
+  -->
+  
+  <PropertyGroup>
+    <!-- Enforce consistent language version across all projects -->
+    <LangVersion>latest</LangVersion>
+    
+    <!-- Enable nullable reference types globally -->
+    <Nullable>enable</Nullable>
+    
+    <!-- Treat warnings as errors in Release builds for code quality -->
+    <TreatWarningsAsErrors Condition="'$(Configuration)' == 'Release'">true</TreatWarningsAsErrors>
+    
+    <!-- Enable code analysis -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    
+    <!-- Common assembly metadata -->
+    <Authors>Your Team</Authors>
+    <Company>Your Company</Company>
+    <Product>DB Execution Plan Monitor</Product>
+    <Copyright>Copyright © 2025</Copyright>
+  </PropertyGroup>
+  
+</Project>

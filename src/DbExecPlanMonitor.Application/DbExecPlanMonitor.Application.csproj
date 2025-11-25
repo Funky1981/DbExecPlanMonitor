@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DbExecPlanMonitor.Application</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Application layer depends ONLY on Domain -->
+  <!-- Contains use cases, DTOs, orchestrators, and interface definitions for infrastructure -->
+  <ItemGroup>
+    <ProjectReference Include="..\DbExecPlanMonitor.Domain\DbExecPlanMonitor.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.Logging.Abstractions for ILogger<T> interface (no implementation) -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <!-- Options pattern support for configuration binding -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+  </ItemGroup>
+
+</Project>

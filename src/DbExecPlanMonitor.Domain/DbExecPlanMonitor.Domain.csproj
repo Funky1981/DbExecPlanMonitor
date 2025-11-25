@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DbExecPlanMonitor.Domain</RootNamespace>
+    
+    <!-- Domain layer has NO external dependencies - pure C# only -->
+    <!-- This ensures the domain remains framework-agnostic and testable -->
+  </PropertyGroup>
+
+</Project>

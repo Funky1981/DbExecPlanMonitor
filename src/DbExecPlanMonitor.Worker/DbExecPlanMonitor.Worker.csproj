@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DbExecPlanMonitor.Worker</RootNamespace>
+    
+    <!-- Enable publishing as a Windows Service -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <!-- Worker is the composition root - depends on all layers to wire up DI -->
+  <ItemGroup>
+    <ProjectReference Include="..\DbExecPlanMonitor.Domain\DbExecPlanMonitor.Domain.csproj" />
+    <ProjectReference Include="..\DbExecPlanMonitor.Application\DbExecPlanMonitor.Application.csproj" />
+    <ProjectReference Include="..\DbExecPlanMonitor.Infrastructure\DbExecPlanMonitor.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core hosting for Worker Service / BackgroundService pattern -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    
+    <!-- Windows Service hosting support (UseWindowsService()) -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    
+    <!-- Configuration from JSON files -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    
+    <!-- Configuration from environment variables -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
+    
+    <!-- User secrets for local development -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="8.0.1" />
+    
+    <!-- Serilog for structured logging (recommended by spec) -->
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="8.0.4" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    
+    <!-- Health checks for operational monitoring -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="8.0.11" />
+  </ItemGroup>
+
+</Project>

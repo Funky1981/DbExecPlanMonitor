@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>DbExecPlanMonitor.Infrastructure.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Reference the Infrastructure project we are testing -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DbExecPlanMonitor.Infrastructure\DbExecPlanMonitor.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- xUnit test framework -->
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    
+    <!-- Test SDK for dotnet test command -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    
+    <!-- FluentAssertions for readable test assertions -->
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    
+    <!-- NSubstitute for mocking -->
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    
+    <!-- Code coverage collection -->
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
