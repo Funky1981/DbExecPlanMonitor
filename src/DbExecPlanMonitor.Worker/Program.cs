@@ -30,6 +30,7 @@ try
 
     // Register Infrastructure layer services (SQL Server monitoring)
     builder.Services.AddSqlServerMonitoring(builder.Configuration);
+    builder.Services.AddMonitoringStorage(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
     // Register the background worker service

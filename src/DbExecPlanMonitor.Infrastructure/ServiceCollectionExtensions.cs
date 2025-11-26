@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using DbExecPlanMonitor.Application.Interfaces;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer.Models;
+using DbExecPlanMonitor.Infrastructure.Persistence;
 
 namespace DbExecPlanMonitor.Infrastructure;
 
@@ -31,9 +32,32 @@ public static class ServiceCollectionExtensions
         // Register connection factory
         services.AddSingleton<ISqlConnectionFactory, SqlConnectionFactory>();
 
-        // Register providers
+        // Register providers (read from SQL Server DMVs/Query Store)
         services.AddSingleton<IPlanStatisticsProvider, DmvPlanStatisticsProvider>();
         services.AddSingleton<IPlanDetailsProvider, DmvPlanDetailsProvider>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds monitoring storage (persistence) services for storing our own data.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddMonitoringStorage(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind storage configuration
+        services.Configure<MonitoringStorageOptions>(
+            configuration.GetSection(MonitoringStorageOptions.SectionName));
+
+        // Register repositories (write our own data)
+        services.AddSingleton<IQueryFingerprintRepository, SqlQueryFingerprintRepository>();
+        services.AddSingleton<IPlanMetricsRepository, SqlPlanMetricsRepository>();
+        services.AddSingleton<IBaselineRepository, SqlBaselineRepository>();
+        services.AddSingleton<IRegressionEventRepository, SqlRegressionEventRepository>();
 
         return services;
     }
