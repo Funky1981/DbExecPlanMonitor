@@ -4,6 +4,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using DbExecPlanMonitor.Application.Interfaces;
+using DbExecPlanMonitor.Application.Orchestrators;
+using DbExecPlanMonitor.Application.Services;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer.Models;
 using DbExecPlanMonitor.Infrastructure.Persistence;
@@ -58,6 +60,29 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPlanMetricsRepository, SqlPlanMetricsRepository>();
         services.AddSingleton<IBaselineRepository, SqlBaselineRepository>();
         services.AddSingleton<IRegressionEventRepository, SqlRegressionEventRepository>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds plan collection and orchestration services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddPlanCollection(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind collection configuration
+        services.Configure<PlanCollectionOptions>(
+            configuration.GetSection(PlanCollectionOptions.SectionName));
+        services.Configure<MonitoringInstancesOptions>(
+            configuration.GetSection(MonitoringInstancesOptions.SectionName));
+
+        // Register services
+        services.AddSingleton<IQueryFingerprintService, QueryFingerprintService>();
+        services.AddSingleton<IPlanCollectionOrchestrator, PlanCollectionOrchestrator>();
 
         return services;
     }

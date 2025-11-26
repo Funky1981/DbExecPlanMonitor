@@ -169,6 +169,239 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
         return await IsQueryStoreEnabledInternalAsync(
             dbInfo.instanceName, dbInfo.databaseName, cancellationToken);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesByElapsedTimeAsync(
+        string connectionString,
+        string databaseName,
+        int topN,
+        TimeWindow window,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Fetching top {TopN} queries by elapsed time for {Database}",
+            topN,
+            databaseName);
+
+        // Connect directly using the provided connection string
+        await using var connection = new SqlConnection(connectionString);
+        
+        // Append the database name to the connection if not already in the connection string
+        var builder = new SqlConnectionStringBuilder(connectionString)
+        {
+            InitialCatalog = databaseName
+        };
+        connection.ConnectionString = builder.ConnectionString;
+
+        await connection.OpenAsync(cancellationToken);
+
+        // Check if Query Store is available
+        var useQueryStore = await IsQueryStoreEnabledDirectAsync(connection, cancellationToken);
+
+        if (useQueryStore)
+        {
+            return await GetTopQueriesFromQueryStoreDirectAsync(
+                connection,
+                topN,
+                window,
+                cancellationToken);
+        }
+
+        return await GetTopQueriesFromDmvDirectAsync(
+            connection,
+            topN,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Checks Query Store status using an open connection.
+    /// </summary>
+    private async Task<bool> IsQueryStoreEnabledDirectAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT CASE WHEN actual_state IN (1, 2) THEN 1 ELSE 0 END 
+                FROM sys.database_query_store_options";
+            command.CommandTimeout = 10;
+
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result != null && (int)result == 1;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Gets top queries from DMVs using an open connection.
+    /// </summary>
+    private async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesFromDmvDirectAsync(
+        SqlConnection connection,
+        int topN,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $@"
+            SELECT TOP (@TopN)
+                qs.query_hash,
+                SUBSTRING(st.text, (qs.statement_start_offset / 2) + 1,
+                    CASE WHEN qs.statement_end_offset = -1 THEN LEN(CONVERT(nvarchar(max), st.text)) * 2
+                         ELSE qs.statement_end_offset - qs.statement_start_offset END / 2 + 1) AS query_text,
+                qs.execution_count,
+                qs.total_elapsed_time / 1000.0 AS total_elapsed_time_ms,
+                (qs.total_elapsed_time / qs.execution_count) / 1000.0 AS avg_elapsed_time_ms,
+                qs.total_worker_time / 1000.0 AS total_cpu_time_ms,
+                (qs.total_worker_time / qs.execution_count) / 1000.0 AS avg_cpu_time_ms,
+                qs.total_logical_reads,
+                qs.total_logical_reads / qs.execution_count AS avg_logical_reads,
+                qs.total_physical_reads,
+                qs.total_physical_reads / qs.execution_count AS avg_physical_reads,
+                qs.total_logical_writes,
+                qs.total_logical_writes / qs.execution_count AS avg_logical_writes,
+                qs.plan_handle,
+                qs.last_execution_time
+            FROM sys.dm_exec_query_stats qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+            WHERE qs.execution_count > 0
+              AND st.text IS NOT NULL
+            ORDER BY qs.total_elapsed_time DESC";
+        
+        command.CommandTimeout = 120;
+        command.Parameters.AddWithValue("@TopN", topN);
+
+        var results = new List<CollectedQueryStatistics>();
+        
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(MapToCollectedStatistics(reader));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Gets top queries from Query Store using an open connection.
+    /// </summary>
+    private async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesFromQueryStoreDirectAsync(
+        SqlConnection connection,
+        int topN,
+        TimeWindow window,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $@"
+            SELECT TOP (@TopN)
+                q.query_hash,
+                qt.query_sql_text,
+                SUM(rs.count_executions) AS execution_count,
+                SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_elapsed_time_ms,
+                AVG(rs.avg_duration) / 1000.0 AS avg_elapsed_time_ms,
+                SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_time_ms,
+                AVG(rs.avg_cpu_time) / 1000.0 AS avg_cpu_time_ms,
+                SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_logical_reads,
+                AVG(rs.avg_logical_io_reads) AS avg_logical_reads,
+                SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
+                AVG(rs.avg_physical_io_reads) AS avg_physical_reads,
+                SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_logical_writes,
+                AVG(rs.avg_logical_io_writes) AS avg_logical_writes,
+                MAX(rs.last_execution_time) AS last_execution_time
+            FROM sys.query_store_query q
+            JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+            JOIN sys.query_store_plan p ON q.query_id = p.query_id
+            JOIN sys.query_store_runtime_stats rs ON p.plan_id = rs.plan_id
+            JOIN sys.query_store_runtime_stats_interval rsi ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+            WHERE rsi.start_time >= @StartTime
+              AND rsi.end_time <= @EndTime
+            GROUP BY q.query_hash, qt.query_sql_text
+            ORDER BY total_elapsed_time_ms DESC";
+
+        command.CommandTimeout = 120;
+        command.Parameters.AddWithValue("@TopN", topN);
+        command.Parameters.AddWithValue("@StartTime", window.StartUtc);
+        command.Parameters.AddWithValue("@EndTime", window.EndUtc);
+
+        var results = new List<CollectedQueryStatistics>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(MapQueryStoreToCollectedStatistics(reader));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Maps a DMV query result to CollectedQueryStatistics.
+    /// </summary>
+    private static CollectedQueryStatistics MapToCollectedStatistics(SqlDataReader reader)
+    {
+        var queryHashBytes = new byte[8];
+        reader.GetBytes(0, 0, queryHashBytes, 0, 8);
+
+        return new CollectedQueryStatistics
+        {
+            QueryHash = queryHashBytes,
+            SqlText = reader.GetString(1),
+            ExecutionCount = reader.GetInt64(2),
+            TotalElapsedTimeMs = reader.GetDouble(3),
+            AvgElapsedTimeMs = reader.GetDouble(4),
+            TotalCpuTimeMs = reader.GetDouble(5),
+            AvgCpuTimeMs = reader.GetDouble(6),
+            TotalLogicalReads = reader.GetInt64(7),
+            AvgLogicalReads = reader.GetDouble(8),
+            TotalPhysicalReads = reader.GetInt64(9),
+            AvgPhysicalReads = reader.GetDouble(10),
+            TotalLogicalWrites = reader.GetInt64(11),
+            AvgLogicalWrites = reader.GetDouble(12),
+            PlanHandle = reader.IsDBNull(13) ? null : GetPlanHandle(reader, 13),
+            LastExecutionTimeUtc = reader.IsDBNull(14) ? null : reader.GetDateTime(14)
+        };
+    }
+
+    /// <summary>
+    /// Maps a Query Store result to CollectedQueryStatistics.
+    /// </summary>
+    private static CollectedQueryStatistics MapQueryStoreToCollectedStatistics(SqlDataReader reader)
+    {
+        var queryHashBytes = new byte[8];
+        reader.GetBytes(0, 0, queryHashBytes, 0, 8);
+
+        return new CollectedQueryStatistics
+        {
+            QueryHash = queryHashBytes,
+            SqlText = reader.GetString(1),
+            ExecutionCount = (long)reader.GetDouble(2), // SUM returns float in some cases
+            TotalElapsedTimeMs = reader.GetDouble(3),
+            AvgElapsedTimeMs = reader.GetDouble(4),
+            TotalCpuTimeMs = reader.GetDouble(5),
+            AvgCpuTimeMs = reader.GetDouble(6),
+            TotalLogicalReads = (long)reader.GetDouble(7),
+            AvgLogicalReads = reader.GetDouble(8),
+            TotalPhysicalReads = (long)reader.GetDouble(9),
+            AvgPhysicalReads = reader.GetDouble(10),
+            TotalLogicalWrites = (long)reader.GetDouble(11),
+            AvgLogicalWrites = reader.GetDouble(12),
+            LastExecutionTimeUtc = reader.IsDBNull(13) ? null : reader.GetDateTime(13)
+        };
+    }
+
+    /// <summary>
+    /// Safely reads plan_handle binary data.
+    /// </summary>
+    private static byte[] GetPlanHandle(SqlDataReader reader, int ordinal)
+    {
+        var length = (int)reader.GetBytes(ordinal, 0, null!, 0, 0);
+        var buffer = new byte[length];
+        reader.GetBytes(ordinal, 0, buffer, 0, length);
+        return buffer;
+    }
     /// <summary>
     /// Checks if Query Store is enabled (internal implementation).
     /// </summary>

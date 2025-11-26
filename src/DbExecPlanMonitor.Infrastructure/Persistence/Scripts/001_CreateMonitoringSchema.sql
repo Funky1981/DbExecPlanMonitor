@@ -365,5 +365,71 @@ BEGIN
 END
 GO
 
+-- ============================================================================
+-- Stored Procedure: monitoring.usp_UpsertQueryFingerprint
+-- Purpose: Atomically upserts a fingerprint with instance/database context
+--          and returns whether it was newly created
+-- ============================================================================
+IF EXISTS (SELECT 1 FROM sys.procedures WHERE name = 'usp_UpsertQueryFingerprint' AND schema_id = SCHEMA_ID('monitoring'))
+    DROP PROCEDURE monitoring.usp_UpsertQueryFingerprint;
+GO
+
+CREATE PROCEDURE monitoring.usp_UpsertQueryFingerprint
+    @InstanceName    NVARCHAR(256),
+    @DatabaseName    NVARCHAR(128),
+    @QueryHash       VARBINARY(32),
+    @SampleText      NVARCHAR(MAX),
+    @NormalizedText  NVARCHAR(MAX),
+    @FingerprintId   UNIQUEIDENTIFIER OUTPUT,
+    @IsNew           BIT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET @IsNew = 0;
+    
+    -- Try to get existing fingerprint first (most common case)
+    SELECT @FingerprintId = Id 
+    FROM monitoring.QueryFingerprint 
+    WHERE QueryHash = @QueryHash;
+    
+    IF @FingerprintId IS NOT NULL
+    BEGIN
+        -- Update last seen timestamp
+        UPDATE monitoring.QueryFingerprint 
+        SET LastSeenUtc = SYSUTCDATETIME() 
+        WHERE Id = @FingerprintId;
+        RETURN;
+    END
+    
+    -- Fingerprint doesn't exist, create it
+    SET @FingerprintId = NEWID();
+    SET @IsNew = 1;
+    
+    BEGIN TRY
+        INSERT INTO monitoring.QueryFingerprint (Id, QueryHash, QueryTextSample, DatabaseName)
+        VALUES (@FingerprintId, @QueryHash, @SampleText, @DatabaseName);
+        
+        -- Note: @InstanceName and @NormalizedText are available for future
+        -- enhancement when we add those columns to the table
+    END TRY
+    BEGIN CATCH
+        -- Handle race condition - another process may have inserted
+        IF ERROR_NUMBER() = 2627 -- Unique constraint violation
+        BEGIN
+            SET @IsNew = 0;
+            SELECT @FingerprintId = Id 
+            FROM monitoring.QueryFingerprint 
+            WHERE QueryHash = @QueryHash;
+            
+            UPDATE monitoring.QueryFingerprint 
+            SET LastSeenUtc = SYSUTCDATETIME() 
+            WHERE Id = @FingerprintId;
+        END
+        ELSE
+            THROW;
+    END CATCH
+END
+GO
+
 PRINT 'Monitoring schema and tables created successfully.';
 GO

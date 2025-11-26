@@ -62,6 +62,23 @@ public interface IPlanStatisticsProvider
     Task<bool> IsQueryStoreEnabledAsync(
         Guid databaseId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the top N queries by elapsed time using connection string (for orchestrator use).
+    /// This overload accepts connection details directly for flexibility.
+    /// </summary>
+    /// <param name="connectionString">Connection string to the SQL Server instance.</param>
+    /// <param name="databaseName">Database name to query.</param>
+    /// <param name="topN">Number of top queries to return.</param>
+    /// <param name="window">Time window for analysis.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Collection of query statistics.</returns>
+    Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesByElapsedTimeAsync(
+        string connectionString,
+        string databaseName,
+        int topN,
+        TimeWindow window,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -224,4 +241,97 @@ public class PlanStatisticsResult
     /// Maximum duration observed.
     /// </summary>
     public double? MaxDurationMs { get; init; }
+}
+
+/// <summary>
+/// Statistics collected from SQL Server for the collection workflow.
+/// Contains all data needed by the orchestrator to fingerprint and store metrics.
+/// </summary>
+public class CollectedQueryStatistics
+{
+    /// <summary>
+    /// SQL Server's query hash (binary, 8 bytes).
+    /// Null if not available from the data source.
+    /// </summary>
+    public byte[]? QueryHash { get; init; }
+
+    /// <summary>
+    /// The original SQL text.
+    /// </summary>
+    public required string SqlText { get; init; }
+
+    /// <summary>
+    /// Object name (stored procedure, function) if applicable.
+    /// </summary>
+    public string? ObjectName { get; init; }
+
+    /// <summary>
+    /// Number of executions in the sample period.
+    /// </summary>
+    public long ExecutionCount { get; init; }
+
+    /// <summary>
+    /// Total elapsed time in milliseconds.
+    /// </summary>
+    public double TotalElapsedTimeMs { get; init; }
+
+    /// <summary>
+    /// Average elapsed time per execution in milliseconds.
+    /// </summary>
+    public double AvgElapsedTimeMs { get; init; }
+
+    /// <summary>
+    /// Total CPU time in milliseconds.
+    /// </summary>
+    public double TotalCpuTimeMs { get; init; }
+
+    /// <summary>
+    /// Average CPU time per execution in milliseconds.
+    /// </summary>
+    public double AvgCpuTimeMs { get; init; }
+
+    /// <summary>
+    /// Total logical reads.
+    /// </summary>
+    public long TotalLogicalReads { get; init; }
+
+    /// <summary>
+    /// Average logical reads per execution.
+    /// </summary>
+    public double AvgLogicalReads { get; init; }
+
+    /// <summary>
+    /// Total physical reads.
+    /// </summary>
+    public long TotalPhysicalReads { get; init; }
+
+    /// <summary>
+    /// Average physical reads per execution.
+    /// </summary>
+    public double AvgPhysicalReads { get; init; }
+
+    /// <summary>
+    /// Total logical writes.
+    /// </summary>
+    public long TotalLogicalWrites { get; init; }
+
+    /// <summary>
+    /// Average logical writes per execution.
+    /// </summary>
+    public double AvgLogicalWrites { get; init; }
+
+    /// <summary>
+    /// Plan handle for retrieving execution plan XML.
+    /// </summary>
+    public byte[]? PlanHandle { get; init; }
+
+    /// <summary>
+    /// Execution plan XML if already retrieved.
+    /// </summary>
+    public string? QueryPlanXml { get; init; }
+
+    /// <summary>
+    /// Last execution time.
+    /// </summary>
+    public DateTime? LastExecutionTimeUtc { get; init; }
 }

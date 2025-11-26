@@ -31,6 +31,7 @@ try
     // Register Infrastructure layer services (SQL Server monitoring)
     builder.Services.AddSqlServerMonitoring(builder.Configuration);
     builder.Services.AddMonitoringStorage(builder.Configuration);
+    builder.Services.AddPlanCollection(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
     // Register the background worker service
@@ -38,8 +39,6 @@ try
 
     // Add health checks for operational monitoring
     builder.Services.AddHealthChecks();
-
-    // TODO: Register Application layer services (use cases, orchestrators)
 
     // Enable Windows Service hosting when running as a service
     builder.Services.AddWindowsService(options =>

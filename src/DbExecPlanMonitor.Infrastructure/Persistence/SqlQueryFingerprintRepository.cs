@@ -162,6 +162,75 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
             ct);
     }
 
+    /// <inheritdoc />
+    public async Task<(Guid Id, bool IsNew)> UpsertAsync(
+        string instanceName,
+        string databaseName,
+        byte[] queryHash,
+        string sampleText,
+        string normalizedText,
+        CancellationToken ct = default)
+    {
+        _logger.LogDebug(
+            "Upserting fingerprint for hash {HashPrefix}... in {Instance}/{Database}",
+            Convert.ToHexString(queryHash.Take(8).ToArray()),
+            instanceName,
+            databaseName);
+
+        // Use stored procedure for atomic upsert with IsNew indicator
+        await using var connection = await OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+
+        command.CommandText = "monitoring.usp_UpsertQueryFingerprint";
+        command.CommandType = CommandType.StoredProcedure;
+        command.CommandTimeout = CommandTimeoutSeconds;
+
+        command.Parameters.Add(new SqlParameter("@InstanceName", SqlDbType.NVarChar, 128)
+        {
+            Value = instanceName
+        });
+        command.Parameters.Add(new SqlParameter("@DatabaseName", SqlDbType.NVarChar, 128)
+        {
+            Value = databaseName
+        });
+        command.Parameters.Add(new SqlParameter("@QueryHash", SqlDbType.VarBinary, 32)
+        {
+            Value = queryHash
+        });
+        command.Parameters.Add(new SqlParameter("@SampleText", SqlDbType.NVarChar, -1)
+        {
+            Value = TruncateQueryText(sampleText)
+        });
+        command.Parameters.Add(new SqlParameter("@NormalizedText", SqlDbType.NVarChar, -1)
+        {
+            Value = TruncateQueryText(normalizedText)
+        });
+
+        var idParam = new SqlParameter("@FingerprintId", SqlDbType.UniqueIdentifier)
+        {
+            Direction = ParameterDirection.Output
+        };
+        command.Parameters.Add(idParam);
+
+        var isNewParam = new SqlParameter("@IsNew", SqlDbType.Bit)
+        {
+            Direction = ParameterDirection.Output
+        };
+        command.Parameters.Add(isNewParam);
+
+        await command.ExecuteNonQueryAsync(ct);
+
+        var fingerprintId = (Guid)idParam.Value;
+        var isNew = (bool)isNewParam.Value;
+
+        _logger.LogDebug(
+            "Fingerprint ID: {FingerprintId}, IsNew: {IsNew}",
+            fingerprintId,
+            isNew);
+
+        return (fingerprintId, isNew);
+    }
+
     /// <summary>
     /// Maps a SqlDataReader row to a QueryFingerprintRecord.
     /// </summary>

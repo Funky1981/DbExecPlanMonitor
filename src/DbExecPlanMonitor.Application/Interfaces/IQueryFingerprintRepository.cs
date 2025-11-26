@@ -26,6 +26,25 @@ public interface IQueryFingerprintRepository
         CancellationToken ct = default);
 
     /// <summary>
+    /// Upserts a fingerprint, returning the ID and whether it was newly created.
+    /// This is the preferred method for the collection orchestrator.
+    /// </summary>
+    /// <param name="instanceName">The database instance name</param>
+    /// <param name="databaseName">The database name</param>
+    /// <param name="queryHash">The normalized query hash</param>
+    /// <param name="sampleText">A sample of the original SQL text</param>
+    /// <param name="normalizedText">The normalized SQL text</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Tuple of (FingerprintId, IsNewlyCreated)</returns>
+    Task<(Guid Id, bool IsNew)> UpsertAsync(
+        string instanceName,
+        string databaseName,
+        byte[] queryHash,
+        string sampleText,
+        string normalizedText,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Gets a fingerprint by its ID.
     /// </summary>
     Task<QueryFingerprintRecord?> GetByIdAsync(Guid fingerprintId, CancellationToken ct = default);
