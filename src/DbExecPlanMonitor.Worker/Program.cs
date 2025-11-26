@@ -1,4 +1,5 @@
 using DbExecPlanMonitor.Worker;
+using DbExecPlanMonitor.Infrastructure;
 using Serilog;
 
 // Configure Serilog early for bootstrap logging
@@ -27,6 +28,10 @@ try
                 retainedFileCountLimit: 30);
     });
 
+    // Register Infrastructure layer services (SQL Server monitoring)
+    builder.Services.AddSqlServerMonitoring(builder.Configuration);
+    builder.Services.AddMonitoringValidation();
+
     // Register the background worker service
     builder.Services.AddHostedService<MonitoringWorker>();
 
@@ -34,8 +39,6 @@ try
     builder.Services.AddHealthChecks();
 
     // TODO: Register Application layer services (use cases, orchestrators)
-    // TODO: Register Infrastructure layer services (repositories, notifiers)
-    // TODO: Configure Options pattern for settings
 
     // Enable Windows Service hosting when running as a service
     builder.Services.AddWindowsService(options =>
