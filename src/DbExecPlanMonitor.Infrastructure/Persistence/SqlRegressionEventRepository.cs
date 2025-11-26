@@ -468,4 +468,247 @@ public sealed class SqlRegressionEventRepository : RepositoryBase, IRegressionEv
         reader.GetBytes(ordinal, 0, buffer, 0, length);
         return buffer;
     }
+
+    // ========== Domain Entity Methods ==========
+
+    /// <inheritdoc />
+    public async Task SaveAsync(Domain.Entities.RegressionEvent regressionEvent, CancellationToken ct = default)
+    {
+        _logger.LogDebug(
+            "Saving RegressionEvent {Id} for fingerprint {FingerprintId}",
+            regressionEvent.Id,
+            regressionEvent.FingerprintId);
+
+        const string sql = @"
+            INSERT INTO monitoring.RegressionEvent (
+                Id, FingerprintId, InstanceName, DatabaseName, DetectedAtUtc,
+                RegressionType, MetricName, BaselineValue, CurrentValue,
+                ChangePercent, ThresholdPercent, Severity,
+                Status, Notes,
+                SampleWindowStart, SampleWindowEnd,
+                BaselineP95DurationUs, CurrentP95DurationUs, DurationChangePercent,
+                BaselineP95CpuTimeUs, CurrentP95CpuTimeUs, CpuChangePercent,
+                BaselineAvgLogicalReads, CurrentAvgLogicalReads
+            ) VALUES (
+                @Id, @FingerprintId, @InstanceName, @DatabaseName, @DetectedAtUtc,
+                @RegressionType, @MetricName, @BaselineValue, @CurrentValue,
+                @ChangePercent, @ThresholdPercent, @Severity,
+                @Status, @Notes,
+                @SampleWindowStart, @SampleWindowEnd,
+                @BaselineP95DurationUs, @CurrentP95DurationUs, @DurationChangePercent,
+                @BaselineP95CpuTimeUs, @CurrentP95CpuTimeUs, @CpuChangePercent,
+                @BaselineAvgLogicalReads, @CurrentAvgLogicalReads
+            )";
+
+        await ExecuteNonQueryAsync(sql, p => ConfigureRegressionEventParameters(p, regressionEvent), ct);
+
+        _logger.LogWarning(
+            "Regression saved: {Severity} regression for {Instance}/{Database}",
+            regressionEvent.Severity,
+            regressionEvent.InstanceName,
+            regressionEvent.DatabaseName);
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateAsync(Domain.Entities.RegressionEvent regressionEvent, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Updating RegressionEvent {Id}", regressionEvent.Id);
+
+        const string sql = @"
+            UPDATE monitoring.RegressionEvent
+            SET Status = @Status,
+                AcknowledgedAtUtc = @AcknowledgedAtUtc,
+                AcknowledgedBy = @AcknowledgedBy,
+                ResolvedAtUtc = @ResolvedAtUtc,
+                ResolvedBy = @ResolvedBy,
+                ResolutionNotes = @ResolutionNotes,
+                Notes = @Notes
+            WHERE Id = @Id";
+
+        await ExecuteNonQueryAsync(sql, p =>
+        {
+            AddGuidParameter(p, "@Id", regressionEvent.Id);
+            p.Add(new SqlParameter("@Status", SqlDbType.TinyInt) 
+            { 
+                Value = (byte)regressionEvent.Status 
+            });
+            p.Add(new SqlParameter("@AcknowledgedAtUtc", SqlDbType.DateTime2)
+            {
+                Value = regressionEvent.AcknowledgedAtUtc.HasValue 
+                    ? regressionEvent.AcknowledgedAtUtc.Value 
+                    : DBNull.Value
+            });
+            AddNullableStringParameter(p, "@AcknowledgedBy", regressionEvent.AcknowledgedBy, 256);
+            p.Add(new SqlParameter("@ResolvedAtUtc", SqlDbType.DateTime2)
+            {
+                Value = regressionEvent.ResolvedAtUtc.HasValue 
+                    ? regressionEvent.ResolvedAtUtc.Value 
+                    : DBNull.Value
+            });
+            AddNullableStringParameter(p, "@ResolvedBy", regressionEvent.ResolvedBy, 256);
+            AddNullableStringParameter(p, "@ResolutionNotes", regressionEvent.ResolutionNotes, -1);
+            AddNullableStringParameter(p, "@Notes", regressionEvent.Description, -1);
+        }, ct);
+
+        _logger.LogInformation("Updated RegressionEvent {Id} to status {Status}", 
+            regressionEvent.Id, regressionEvent.Status);
+    }
+
+    /// <inheritdoc />
+    public async Task<Domain.Entities.RegressionEvent?> GetActiveByFingerprintIdAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT 
+                Id, FingerprintId, InstanceName, DatabaseName, DetectedAtUtc,
+                Severity, Status, Description, 
+                BaselineP95DurationUs, BaselineP95CpuTimeUs, BaselineAvgLogicalReads,
+                CurrentP95DurationUs, CurrentP95CpuTimeUs, CurrentAvgLogicalReads,
+                DurationChangePercent, CpuChangePercent,
+                SampleWindowStart, SampleWindowEnd,
+                AcknowledgedAtUtc, AcknowledgedBy,
+                ResolvedAtUtc, ResolvedBy, ResolutionNotes
+            FROM monitoring.RegressionEvent
+            WHERE FingerprintId = @FingerprintId 
+              AND Status < 2  -- Not resolved
+            ORDER BY DetectedAtUtc DESC";
+
+        return await ExecuteQuerySingleAsync(
+            sql,
+            MapRegressionEvent,
+            p => AddGuidParameter(p, "@FingerprintId", fingerprintId),
+            ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Domain.Entities.RegressionEvent>> GetActiveAsync(CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT 
+                Id, FingerprintId, InstanceName, DatabaseName, DetectedAtUtc,
+                Severity, Status, Description, 
+                BaselineP95DurationUs, BaselineP95CpuTimeUs, BaselineAvgLogicalReads,
+                CurrentP95DurationUs, CurrentP95CpuTimeUs, CurrentAvgLogicalReads,
+                DurationChangePercent, CpuChangePercent,
+                SampleWindowStart, SampleWindowEnd,
+                AcknowledgedAtUtc, AcknowledgedBy,
+                ResolvedAtUtc, ResolvedBy, ResolutionNotes
+            FROM monitoring.RegressionEvent
+            WHERE Status < 2  -- Not resolved
+            ORDER BY Severity DESC, DetectedAtUtc DESC";
+
+        return await ExecuteQueryAsync(sql, MapRegressionEvent, null, ct);
+    }
+
+    /// <summary>
+    /// Configures parameters for inserting a RegressionEvent domain entity.
+    /// </summary>
+    private static void ConfigureRegressionEventParameters(
+        SqlParameterCollection p, 
+        Domain.Entities.RegressionEvent evt)
+    {
+        AddGuidParameter(p, "@Id", evt.Id);
+        AddGuidParameter(p, "@FingerprintId", evt.FingerprintId);
+        AddStringParameter(p, "@InstanceName", evt.InstanceName, 256);
+        AddStringParameter(p, "@DatabaseName", evt.DatabaseName, 128);
+        AddDateTimeParameter(p, "@DetectedAtUtc", evt.DetectedAtUtc);
+
+        // Use a default regression type
+        p.Add(new SqlParameter("@RegressionType", SqlDbType.TinyInt) { Value = (byte)0 });
+        AddStringParameter(p, "@MetricName", "P95Duration", 50);
+
+        // For the legacy columns, use duration values
+        AddNullableBigIntParameter(p, "@BaselineValue", evt.BaselineP95DurationUs);
+        AddNullableBigIntParameter(p, "@CurrentValue", evt.CurrentP95DurationUs);
+        AddNullableFloatParameter(p, "@ChangePercent", (double?)evt.DurationChangePercent);
+        AddFloatParameter(p, "@ThresholdPercent", 50.0); // Default threshold
+        p.Add(new SqlParameter("@Severity", SqlDbType.TinyInt) { Value = (byte)evt.Severity });
+        p.Add(new SqlParameter("@Status", SqlDbType.TinyInt) { Value = (byte)evt.Status });
+        AddNullableStringParameter(p, "@Notes", evt.Description, -1);
+
+        p.Add(new SqlParameter("@SampleWindowStart", SqlDbType.DateTime2)
+        {
+            Value = evt.SampleWindowStart.HasValue ? evt.SampleWindowStart.Value : DBNull.Value
+        });
+        p.Add(new SqlParameter("@SampleWindowEnd", SqlDbType.DateTime2)
+        {
+            Value = evt.SampleWindowEnd.HasValue ? evt.SampleWindowEnd.Value : DBNull.Value
+        });
+
+        AddNullableBigIntParameter(p, "@BaselineP95DurationUs", evt.BaselineP95DurationUs);
+        AddNullableBigIntParameter(p, "@CurrentP95DurationUs", evt.CurrentP95DurationUs);
+        AddNullableFloatParameter(p, "@DurationChangePercent", (double?)evt.DurationChangePercent);
+        AddNullableBigIntParameter(p, "@BaselineP95CpuTimeUs", evt.BaselineP95CpuTimeUs);
+        AddNullableBigIntParameter(p, "@CurrentP95CpuTimeUs", evt.CurrentP95CpuTimeUs);
+        AddNullableFloatParameter(p, "@CpuChangePercent", (double?)evt.CpuChangePercent);
+        AddNullableBigIntParameter(p, "@BaselineAvgLogicalReads", evt.BaselineAvgLogicalReads);
+        AddNullableBigIntParameter(p, "@CurrentAvgLogicalReads", evt.CurrentAvgLogicalReads);
+    }
+
+    /// <summary>
+    /// Maps a SqlDataReader row to a RegressionEvent domain entity.
+    /// </summary>
+    private static Domain.Entities.RegressionEvent MapRegressionEvent(SqlDataReader reader)
+    {
+        return new Domain.Entities.RegressionEvent
+        {
+            Id = reader.GetGuid(0),
+            FingerprintId = reader.GetGuid(1),
+            InstanceName = reader.GetString(2),
+            DatabaseName = reader.GetString(3),
+            DetectedAtUtc = reader.GetDateTime(4),
+            Severity = (Domain.Enums.RegressionSeverity)reader.GetByte(5),
+            Status = (Domain.Enums.RegressionStatus)reader.GetByte(6),
+            Description = reader.IsDBNull(7) ? null : reader.GetString(7),
+            BaselineP95DurationUs = reader.IsDBNull(8) ? null : reader.GetInt64(8),
+            BaselineP95CpuTimeUs = reader.IsDBNull(9) ? null : reader.GetInt64(9),
+            BaselineAvgLogicalReads = reader.IsDBNull(10) ? null : reader.GetInt64(10),
+            CurrentP95DurationUs = reader.IsDBNull(11) ? null : reader.GetInt64(11),
+            CurrentP95CpuTimeUs = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+            CurrentAvgLogicalReads = reader.IsDBNull(13) ? null : reader.GetInt64(13),
+            DurationChangePercent = reader.IsDBNull(14) ? null : (decimal)reader.GetDouble(14),
+            CpuChangePercent = reader.IsDBNull(15) ? null : (decimal)reader.GetDouble(15),
+            SampleWindowStart = reader.IsDBNull(16) ? null : reader.GetDateTime(16),
+            SampleWindowEnd = reader.IsDBNull(17) ? null : reader.GetDateTime(17),
+            AcknowledgedAtUtc = reader.IsDBNull(18) ? null : reader.GetDateTime(18),
+            AcknowledgedBy = reader.IsDBNull(19) ? null : reader.GetString(19),
+            ResolvedAtUtc = reader.IsDBNull(20) ? null : reader.GetDateTime(20),
+            ResolvedBy = reader.IsDBNull(21) ? null : reader.GetString(21),
+            ResolutionNotes = reader.IsDBNull(22) ? null : reader.GetString(22)
+        };
+    }
+
+    /// <summary>
+    /// Adds a nullable bigint parameter.
+    /// </summary>
+    private static void AddNullableBigIntParameter(SqlParameterCollection p, string name, long? value)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.BigInt)
+        {
+            Value = value.HasValue ? value.Value : DBNull.Value
+        });
+    }
+
+    /// <summary>
+    /// Adds a nullable string parameter.
+    /// </summary>
+    private static void AddNullableStringParameter(SqlParameterCollection p, string name, string? value, int maxLength)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.NVarChar, maxLength)
+        {
+            Value = value ?? (object)DBNull.Value
+        });
+    }
+
+    /// <summary>
+    /// Adds a nullable float parameter.
+    /// </summary>
+    private static void AddNullableFloatParameter(SqlParameterCollection p, string name, double? value)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.Float)
+        {
+            Value = value.HasValue ? value.Value : DBNull.Value
+        });
+    }
 }

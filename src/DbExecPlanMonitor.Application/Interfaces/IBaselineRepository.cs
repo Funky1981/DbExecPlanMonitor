@@ -53,6 +53,23 @@ public interface IBaselineRepository
     Task SaveBaselinesAsync(
         IEnumerable<BaselineRecord> baselines,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Saves a PlanBaseline entity (domain entity version).
+    /// </summary>
+    Task SaveAsync(Domain.Entities.PlanBaseline baseline, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the active baseline for a fingerprint (domain entity version).
+    /// </summary>
+    Task<Domain.Entities.PlanBaseline?> GetActiveByFingerprintIdAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Supersedes (deactivates) the current active baseline for a fingerprint.
+    /// </summary>
+    Task SupersedeActiveBaselineAsync(Guid fingerprintId, CancellationToken ct = default);
 }
 
 /// <summary>

@@ -92,6 +92,30 @@ public interface IRegressionEventRepository
     /// Deletes regression events older than the specified date.
     /// </summary>
     Task<int> PurgeEventsOlderThanAsync(DateTime olderThan, CancellationToken ct = default);
+
+    /// <summary>
+    /// Saves a RegressionEvent entity (domain entity version).
+    /// </summary>
+    Task SaveAsync(Domain.Entities.RegressionEvent regressionEvent, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates a RegressionEvent entity (domain entity version).
+    /// </summary>
+    Task UpdateAsync(Domain.Entities.RegressionEvent regressionEvent, CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the active regression for a fingerprint (if any).
+    /// Active = not resolved or dismissed.
+    /// </summary>
+    Task<Domain.Entities.RegressionEvent?> GetActiveByFingerprintIdAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all active (unresolved) regressions.
+    /// </summary>
+    Task<IReadOnlyList<Domain.Entities.RegressionEvent>> GetActiveAsync(
+        CancellationToken ct = default);
 }
 
 /// <summary>

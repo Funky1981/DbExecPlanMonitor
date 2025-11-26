@@ -325,4 +325,169 @@ public sealed class SqlBaselineRepository : RepositoryBase, IBaselineRepository
         reader.GetBytes(ordinal, 0, buffer, 0, length);
         return buffer;
     }
+
+    // ========== Domain Entity Methods ==========
+
+    /// <inheritdoc />
+    public async Task SaveAsync(Domain.Entities.PlanBaseline baseline, CancellationToken ct = default)
+    {
+        _logger.LogDebug(
+            "Saving PlanBaseline for fingerprint {FingerprintId}",
+            baseline.FingerprintId);
+
+        const string sql = @"
+            INSERT INTO monitoring.Baseline (
+                Id, FingerprintId, InstanceName, DatabaseName,
+                BaselineStartUtc, BaselineEndUtc, CreatedAtUtc,
+                SampleCount, TotalExecutions,
+                MedianDurationUs, P95DurationUs, P99DurationUs, AvgDurationUs, DurationStdDev,
+                MedianCpuTimeUs, P95CpuTimeUs, AvgCpuTimeUs,
+                MedianLogicalReads, P95LogicalReads, AvgLogicalReads,
+                ExpectedPlanHash, Notes, IsActive
+            ) VALUES (
+                @Id, @FingerprintId, @InstanceName, @DatabaseName,
+                @BaselineStartUtc, @BaselineEndUtc, @CreatedAtUtc,
+                @SampleCount, @TotalExecutions,
+                @MedianDurationUs, @P95DurationUs, @P99DurationUs, @AvgDurationUs, @DurationStdDev,
+                @MedianCpuTimeUs, @P95CpuTimeUs, @AvgCpuTimeUs,
+                @MedianLogicalReads, @P95LogicalReads, @AvgLogicalReads,
+                @ExpectedPlanHash, @Notes, @IsActive
+            )";
+
+        await ExecuteNonQueryAsync(sql, p =>
+        {
+            AddGuidParameter(p, "@Id", baseline.Id);
+            AddGuidParameter(p, "@FingerprintId", baseline.FingerprintId);
+            AddStringParameter(p, "@InstanceName", baseline.InstanceName, 256);
+            AddStringParameter(p, "@DatabaseName", baseline.DatabaseName, 128);
+            AddDateTimeParameter(p, "@BaselineStartUtc", baseline.WindowStartUtc);
+            AddDateTimeParameter(p, "@BaselineEndUtc", baseline.WindowEndUtc);
+            AddDateTimeParameter(p, "@CreatedAtUtc", baseline.ComputedAtUtc);
+            AddIntParameter(p, "@SampleCount", baseline.SampleCount);
+            AddBigIntParameter(p, "@TotalExecutions", baseline.TotalExecutions);
+            AddBigIntParameter(p, "@MedianDurationUs", baseline.MedianDurationUs);
+            AddNullableBigIntParameter(p, "@P95DurationUs", baseline.P95DurationUs);
+            AddNullableBigIntParameter(p, "@P99DurationUs", baseline.P99DurationUs);
+            AddBigIntParameter(p, "@AvgDurationUs", baseline.AvgDurationUs);
+            AddNullableFloatParameter(p, "@DurationStdDev", baseline.DurationStdDev);
+            AddBigIntParameter(p, "@MedianCpuTimeUs", baseline.MedianCpuTimeUs);
+            AddNullableBigIntParameter(p, "@P95CpuTimeUs", baseline.P95CpuTimeUs);
+            AddBigIntParameter(p, "@AvgCpuTimeUs", baseline.AvgCpuTimeUs);
+            AddBigIntParameter(p, "@MedianLogicalReads", 0); // Not in entity, use default
+            AddBigIntParameter(p, "@P95LogicalReads", 0);
+            AddBigIntParameter(p, "@AvgLogicalReads", baseline.AvgLogicalReads);
+            AddBinaryParameter(p, "@ExpectedPlanHash", baseline.TypicalPlanHash, 32);
+            AddNullableStringParameter(p, "@Notes", null, 500);
+            AddBoolParameter(p, "@IsActive", baseline.IsActive);
+        }, ct);
+
+        _logger.LogInformation(
+            "Saved PlanBaseline {Id} for fingerprint {FingerprintId}",
+            baseline.Id, baseline.FingerprintId);
+    }
+
+    /// <inheritdoc />
+    public async Task<Domain.Entities.PlanBaseline?> GetActiveByFingerprintIdAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT 
+                Id, FingerprintId, InstanceName, DatabaseName,
+                BaselineStartUtc, BaselineEndUtc, CreatedAtUtc, SupersededAtUtc,
+                SampleCount, TotalExecutions,
+                AvgDurationUs, MedianDurationUs, P95DurationUs, P99DurationUs, DurationStdDev,
+                AvgCpuTimeUs, MedianCpuTimeUs, P95CpuTimeUs,
+                AvgLogicalReads, IsActive
+            FROM monitoring.Baseline
+            WHERE FingerprintId = @FingerprintId AND IsActive = 1";
+
+        return await ExecuteQuerySingleAsync(
+            sql,
+            MapPlanBaseline,
+            p => AddGuidParameter(p, "@FingerprintId", fingerprintId),
+            ct);
+    }
+
+    /// <inheritdoc />
+    public async Task SupersedeActiveBaselineAsync(Guid fingerprintId, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Superseding active baseline for fingerprint {FingerprintId}", fingerprintId);
+
+        const string sql = @"
+            UPDATE monitoring.Baseline
+            SET IsActive = 0, SupersededAtUtc = @SupersededAtUtc
+            WHERE FingerprintId = @FingerprintId AND IsActive = 1";
+
+        var affected = await ExecuteNonQueryAsync(sql, p =>
+        {
+            AddGuidParameter(p, "@FingerprintId", fingerprintId);
+            AddDateTimeParameter(p, "@SupersededAtUtc", DateTime.UtcNow);
+        }, ct);
+
+        _logger.LogDebug("Superseded {Count} baselines for fingerprint {FingerprintId}", affected, fingerprintId);
+    }
+
+    /// <summary>
+    /// Maps a SqlDataReader row to a PlanBaseline domain entity.
+    /// </summary>
+    private static Domain.Entities.PlanBaseline MapPlanBaseline(SqlDataReader reader)
+    {
+        return new Domain.Entities.PlanBaseline
+        {
+            Id = reader.GetGuid(0),
+            FingerprintId = reader.GetGuid(1),
+            InstanceName = reader.IsDBNull(2) ? "" : reader.GetString(2),
+            DatabaseName = reader.GetString(3),
+            WindowStartUtc = reader.GetDateTime(4),
+            WindowEndUtc = reader.GetDateTime(5),
+            ComputedAtUtc = reader.GetDateTime(6),
+            SupersededAtUtc = reader.IsDBNull(7) ? null : reader.GetDateTime(7),
+            SampleCount = reader.GetInt32(8),
+            TotalExecutions = reader.GetInt64(9),
+            AvgDurationUs = reader.GetInt64(10),
+            MedianDurationUs = reader.IsDBNull(11) ? 0 : reader.GetInt64(11),
+            P95DurationUs = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+            P99DurationUs = reader.IsDBNull(13) ? null : reader.GetInt64(13),
+            DurationStdDev = reader.IsDBNull(14) ? null : reader.GetDouble(14),
+            AvgCpuTimeUs = reader.GetInt64(15),
+            MedianCpuTimeUs = reader.IsDBNull(16) ? 0 : reader.GetInt64(16),
+            P95CpuTimeUs = reader.IsDBNull(17) ? null : reader.GetInt64(17),
+            AvgLogicalReads = reader.GetInt64(18),
+            IsActive = reader.GetBoolean(19)
+        };
+    }
+
+    /// <summary>
+    /// Adds a nullable bigint parameter.
+    /// </summary>
+    private static void AddNullableBigIntParameter(SqlParameterCollection p, string name, long? value)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.BigInt)
+        {
+            Value = value.HasValue ? value.Value : DBNull.Value
+        });
+    }
+
+    /// <summary>
+    /// Adds a nullable string parameter.
+    /// </summary>
+    private static void AddNullableStringParameter(SqlParameterCollection p, string name, string? value, int maxLength)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.NVarChar, maxLength)
+        {
+            Value = value ?? (object)DBNull.Value
+        });
+    }
+
+    /// <summary>
+    /// Adds a nullable float parameter.
+    /// </summary>
+    private static void AddNullableFloatParameter(SqlParameterCollection p, string name, double? value)
+    {
+        p.Add(new SqlParameter(name, SqlDbType.Float)
+        {
+            Value = value.HasValue ? value.Value : DBNull.Value
+        });
+    }
 }
