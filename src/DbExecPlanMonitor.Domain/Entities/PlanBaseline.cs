@@ -1,406 +1,130 @@
 namespace DbExecPlanMonitor.Domain.Entities;
 
 /// <summary>
-/// Represents the expected/baseline performance for a query.
-/// Used to detect regressions when current metrics deviate significantly.
+/// Represents a performance baseline for a query fingerprint.
+/// Baselines are computed from historical data and used for regression detection.
 /// </summary>
-/// <remarks>
-/// A baseline captures "this is how this query should perform under normal conditions."
-/// 
-/// Baselines can be:
-/// - Auto-generated: Calculated from the first N samples after the query stabilizes
-/// - Manually set: DBA explicitly says "this is acceptable performance"
-/// - Updated: When a legitimate change improves performance, update the baseline
-/// 
-/// Regression detection = Current metrics vs Baseline, with configurable thresholds.
-/// </remarks>
-public class PlanBaseline
+public sealed class PlanBaseline
 {
     /// <summary>
     /// Unique identifier for this baseline.
     /// </summary>
-    public Guid Id { get; private set; }
+    public Guid Id { get; init; }
 
     /// <summary>
-    /// Reference to the query fingerprint this baseline is for.
+    /// The query fingerprint this baseline applies to.
     /// </summary>
-    public Guid QueryFingerprintId { get; private set; }
+    public required Guid FingerprintId { get; init; }
 
     /// <summary>
-    /// Navigation property to the query fingerprint.
+    /// Database instance.
     /// </summary>
-    public QueryFingerprint QueryFingerprint { get; private set; } = null!;
+    public required string InstanceName { get; init; }
 
     /// <summary>
-    /// Reference to the execution plan this baseline was captured from.
-    /// This is the "known good" plan.
+    /// Database name.
     /// </summary>
-    public Guid BaselinePlanSnapshotId { get; private set; }
+    public required string DatabaseName { get; init; }
 
     /// <summary>
-    /// Navigation property to the baseline plan.
+    /// When this baseline was computed.
     /// </summary>
-    public ExecutionPlanSnapshot BaselinePlanSnapshot { get; private set; } = null!;
+    public required DateTime ComputedAtUtc { get; init; }
 
     /// <summary>
-    /// The baseline average CPU time in milliseconds.
+    /// Start of the time window used to compute this baseline.
     /// </summary>
-    public double BaselineAvgCpuTimeMs { get; private set; }
+    public required DateTime WindowStartUtc { get; init; }
 
     /// <summary>
-    /// The baseline average duration/elapsed time in milliseconds.
+    /// End of the time window used to compute this baseline.
     /// </summary>
-    public double BaselineAvgDurationMs { get; private set; }
+    public required DateTime WindowEndUtc { get; init; }
 
     /// <summary>
-    /// The baseline average logical reads.
+    /// Number of samples used to compute this baseline.
+    /// Higher = more reliable.
     /// </summary>
-    public double BaselineAvgLogicalReads { get; private set; }
+    public required int SampleCount { get; init; }
 
     /// <summary>
-    /// The baseline average rows returned.
+    /// Total executions observed in the baseline window.
     /// </summary>
-    public double BaselineAvgRowsReturned { get; private set; }
+    public required long TotalExecutions { get; init; }
+
+    // Duration metrics (microseconds)
+    public long MedianDurationUs { get; init; }
+    public long? P95DurationUs { get; init; }
+    public long? P99DurationUs { get; init; }
+    public long AvgDurationUs { get; init; }
+    public long? MinDurationUs { get; init; }
+    public long? MaxDurationUs { get; init; }
+
+    // CPU metrics (microseconds)
+    public long MedianCpuTimeUs { get; init; }
+    public long? P95CpuTimeUs { get; init; }
+    public long AvgCpuTimeUs { get; init; }
+
+    // I/O metrics
+    public long AvgLogicalReads { get; init; }
+    public long? MaxLogicalReads { get; init; }
+    public long AvgPhysicalReads { get; init; }
+    public long AvgLogicalWrites { get; init; }
+
+    // Standard deviation for variance detection
+    public double? DurationStdDev { get; init; }
+    public double? CpuTimeStdDev { get; init; }
 
     /// <summary>
-    /// The baseline average physical reads (optional).
+    /// Whether this baseline is currently active (not superseded).
     /// </summary>
-    public double? BaselineAvgPhysicalReads { get; private set; }
+    public bool IsActive { get; set; } = true;
 
     /// <summary>
-    /// The baseline average memory grant (optional).
+    /// When this baseline was superseded by a newer one.
     /// </summary>
-    public double? BaselineAvgMemoryGrantKb { get; private set; }
+    public DateTime? SupersededAtUtc { get; set; }
 
     /// <summary>
-    /// Threshold multiplier for CPU time regression detection.
-    /// Default 2.0 means "alert if CPU time is 2x baseline."
+    /// Plan hash that was typical during this baseline period.
     /// </summary>
-    public double CpuTimeThresholdMultiplier { get; private set; }
+    public byte[]? TypicalPlanHash { get; init; }
 
     /// <summary>
-    /// Threshold multiplier for duration regression detection.
+    /// Convenience: median duration in milliseconds.
     /// </summary>
-    public double DurationThresholdMultiplier { get; private set; }
+    public double MedianDurationMs => MedianDurationUs / 1000.0;
 
     /// <summary>
-    /// Threshold multiplier for logical reads regression detection.
+    /// Convenience: P95 duration in milliseconds.
     /// </summary>
-    public double LogicalReadsThresholdMultiplier { get; private set; }
+    public double? P95DurationMs => P95DurationUs / 1000.0;
 
     /// <summary>
-    /// Minimum number of samples required before comparing to baseline.
-    /// Prevents false alerts from single-sample spikes.
+    /// Convenience: median CPU time in milliseconds.
     /// </summary>
-    public int MinimumSamplesForComparison { get; private set; }
+    public double MedianCpuTimeMs => MedianCpuTimeUs / 1000.0;
 
     /// <summary>
-    /// When this baseline was created.
+    /// Checks if the baseline has enough data to be reliable.
     /// </summary>
-    public DateTime CreatedAtUtc { get; private set; }
+    public bool IsReliable(int minimumSamples = 10) => SampleCount >= minimumSamples;
 
     /// <summary>
-    /// When this baseline was last updated.
+    /// Marks this baseline as superseded by a newer one.
     /// </summary>
-    public DateTime? LastUpdatedAtUtc { get; private set; }
-
-    /// <summary>
-    /// How this baseline was established.
-    /// </summary>
-    public BaselineSource Source { get; private set; }
-
-    /// <summary>
-    /// Whether this baseline is currently active.
-    /// Inactive baselines are kept for history but not used for comparison.
-    /// </summary>
-    public bool IsActive { get; private set; }
-
-    /// <summary>
-    /// Optional notes about this baseline.
-    /// </summary>
-    public string? Notes { get; private set; }
-
-    // Private constructor for EF Core
-    private PlanBaseline() { }
-
-    /// <summary>
-    /// Creates a new baseline. Called by QueryFingerprint.SetBaseline().
-    /// </summary>
-    internal PlanBaseline(
-        QueryFingerprint fingerprint,
-        ExecutionPlanSnapshot planSnapshot,
-        double avgCpuTimeMs,
-        double avgDurationMs,
-        double avgLogicalReads,
-        double avgRowsReturned)
-    {
-        if (fingerprint == null)
-            throw new ArgumentNullException(nameof(fingerprint));
-        if (planSnapshot == null)
-            throw new ArgumentNullException(nameof(planSnapshot));
-
-        Id = Guid.NewGuid();
-        QueryFingerprintId = fingerprint.Id;
-        QueryFingerprint = fingerprint;
-        BaselinePlanSnapshotId = planSnapshot.Id;
-        BaselinePlanSnapshot = planSnapshot;
-
-        BaselineAvgCpuTimeMs = avgCpuTimeMs;
-        BaselineAvgDurationMs = avgDurationMs;
-        BaselineAvgLogicalReads = avgLogicalReads;
-        BaselineAvgRowsReturned = avgRowsReturned;
-
-        // Default thresholds - can be tuned per query
-        CpuTimeThresholdMultiplier = 2.0;      // Alert if 2x slower
-        DurationThresholdMultiplier = 2.0;
-        LogicalReadsThresholdMultiplier = 3.0; // More tolerant for reads (can vary with data)
-        MinimumSamplesForComparison = 3;       // Need 3 samples before alerting
-
-        CreatedAtUtc = DateTime.UtcNow;
-        Source = BaselineSource.AutoGenerated;
-        IsActive = true;
-    }
-
-    /// <summary>
-    /// Updates the baseline metrics.
-    /// Use when performance legitimately improved and you want to raise the bar.
-    /// </summary>
-    public void UpdateMetrics(
-        double avgCpuTimeMs,
-        double avgDurationMs,
-        double avgLogicalReads,
-        double avgRowsReturned,
-        ExecutionPlanSnapshot? newPlanSnapshot = null)
-    {
-        BaselineAvgCpuTimeMs = avgCpuTimeMs;
-        BaselineAvgDurationMs = avgDurationMs;
-        BaselineAvgLogicalReads = avgLogicalReads;
-        BaselineAvgRowsReturned = avgRowsReturned;
-        LastUpdatedAtUtc = DateTime.UtcNow;
-
-        if (newPlanSnapshot != null)
-        {
-            BaselinePlanSnapshotId = newPlanSnapshot.Id;
-            BaselinePlanSnapshot = newPlanSnapshot;
-        }
-    }
-
-    /// <summary>
-    /// Configures the regression detection thresholds.
-    /// </summary>
-    public void ConfigureThresholds(
-        double cpuTimeMultiplier,
-        double durationMultiplier,
-        double logicalReadsMultiplier,
-        int minimumSamples = 3)
-    {
-        if (cpuTimeMultiplier < 1.1)
-            throw new ArgumentException("CPU time threshold must be at least 1.1x", nameof(cpuTimeMultiplier));
-        if (durationMultiplier < 1.1)
-            throw new ArgumentException("Duration threshold must be at least 1.1x", nameof(durationMultiplier));
-        if (logicalReadsMultiplier < 1.1)
-            throw new ArgumentException("Logical reads threshold must be at least 1.1x", nameof(logicalReadsMultiplier));
-        if (minimumSamples < 1)
-            throw new ArgumentException("Minimum samples must be at least 1", nameof(minimumSamples));
-
-        CpuTimeThresholdMultiplier = cpuTimeMultiplier;
-        DurationThresholdMultiplier = durationMultiplier;
-        LogicalReadsThresholdMultiplier = logicalReadsMultiplier;
-        MinimumSamplesForComparison = minimumSamples;
-        LastUpdatedAtUtc = DateTime.UtcNow;
-    }
-
-    /// <summary>
-    /// Checks if a metric sample represents a regression.
-    /// </summary>
-    public RegressionCheckResult CheckForRegression(PlanMetricSample sample)
-    {
-        if (sample == null)
-            throw new ArgumentNullException(nameof(sample));
-
-        var result = new RegressionCheckResult();
-
-        // Check CPU time
-        if (BaselineAvgCpuTimeMs > 0)
-        {
-            var cpuRatio = sample.AvgCpuTimeMs / BaselineAvgCpuTimeMs;
-            if (cpuRatio >= CpuTimeThresholdMultiplier)
-            {
-                result.IsCpuTimeRegression = true;
-                result.CpuTimeRatio = cpuRatio;
-            }
-        }
-
-        // Check duration
-        if (BaselineAvgDurationMs > 0)
-        {
-            var durationRatio = sample.AvgDurationMs / BaselineAvgDurationMs;
-            if (durationRatio >= DurationThresholdMultiplier)
-            {
-                result.IsDurationRegression = true;
-                result.DurationRatio = durationRatio;
-            }
-        }
-
-        // Check logical reads
-        if (BaselineAvgLogicalReads > 0)
-        {
-            var readsRatio = sample.AvgLogicalReads / BaselineAvgLogicalReads;
-            if (readsRatio >= LogicalReadsThresholdMultiplier)
-            {
-                result.IsLogicalReadsRegression = true;
-                result.LogicalReadsRatio = readsRatio;
-            }
-        }
-
-        // Check if the plan changed
-        result.IsPlanChange = sample.ExecutionPlanSnapshotId != BaselinePlanSnapshotId;
-
-        return result;
-    }
-
-    /// <summary>
-    /// Marks this baseline as manually verified by a DBA.
-    /// </summary>
-    public void MarkAsManuallySet(string? notes = null)
-    {
-        Source = BaselineSource.ManuallySet;
-        LastUpdatedAtUtc = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(notes))
-        {
-            Notes = notes;
-        }
-    }
-
-    /// <summary>
-    /// Deactivates this baseline (keeps for history).
-    /// </summary>
-    public void Deactivate()
+    public void Supersede()
     {
         IsActive = false;
-        LastUpdatedAtUtc = DateTime.UtcNow;
+        SupersededAtUtc = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Reactivates this baseline.
+    /// Gets the coefficient of variation (CV) for duration.
+    /// Lower CV = more consistent performance.
     /// </summary>
-    public void Activate()
-    {
-        IsActive = true;
-        LastUpdatedAtUtc = DateTime.UtcNow;
-    }
-
-    /// <summary>
-    /// Adds a note about this baseline.
-    /// </summary>
-    public void AddNote(string note)
-    {
-        if (string.IsNullOrWhiteSpace(note))
-            return;
-
-        Notes = string.IsNullOrWhiteSpace(Notes)
-            ? $"[{DateTime.UtcNow:u}] {note}"
-            : $"{Notes}\n[{DateTime.UtcNow:u}] {note}";
-        LastUpdatedAtUtc = DateTime.UtcNow;
-    }
-}
-
-/// <summary>
-/// How the baseline was established.
-/// </summary>
-public enum BaselineSource
-{
-    /// <summary>
-    /// Automatically calculated from initial samples.
-    /// </summary>
-    AutoGenerated,
-
-    /// <summary>
-    /// Manually set by a DBA.
-    /// </summary>
-    ManuallySet,
-
-    /// <summary>
-    /// Imported from Query Store recommendations.
-    /// </summary>
-    QueryStoreImport,
-
-    /// <summary>
-    /// Copied from another environment (e.g., production baseline applied to staging).
-    /// </summary>
-    CopiedFromEnvironment
-}
-
-/// <summary>
-/// Result of checking a sample against a baseline.
-/// </summary>
-public class RegressionCheckResult
-{
-    /// <summary>
-    /// Whether CPU time exceeded the threshold.
-    /// </summary>
-    public bool IsCpuTimeRegression { get; set; }
-
-    /// <summary>
-    /// The ratio of current CPU time to baseline (e.g., 3.5 = 3.5x slower).
-    /// </summary>
-    public double CpuTimeRatio { get; set; }
-
-    /// <summary>
-    /// Whether duration exceeded the threshold.
-    /// </summary>
-    public bool IsDurationRegression { get; set; }
-
-    /// <summary>
-    /// The ratio of current duration to baseline.
-    /// </summary>
-    public double DurationRatio { get; set; }
-
-    /// <summary>
-    /// Whether logical reads exceeded the threshold.
-    /// </summary>
-    public bool IsLogicalReadsRegression { get; set; }
-
-    /// <summary>
-    /// The ratio of current reads to baseline.
-    /// </summary>
-    public double LogicalReadsRatio { get; set; }
-
-    /// <summary>
-    /// Whether the execution plan changed from baseline.
-    /// Plan changes are often the root cause of regressions.
-    /// </summary>
-    public bool IsPlanChange { get; set; }
-
-    /// <summary>
-    /// Whether ANY regression was detected.
-    /// </summary>
-    public bool HasRegression => IsCpuTimeRegression || IsDurationRegression || IsLogicalReadsRegression;
-
-    /// <summary>
-    /// Gets the most significant regression ratio.
-    /// </summary>
-    public double MaxRegressionRatio => Math.Max(Math.Max(CpuTimeRatio, DurationRatio), LogicalReadsRatio);
-
-    /// <summary>
-    /// Gets a summary description of the regression.
-    /// </summary>
-    public string GetSummary()
-    {
-        if (!HasRegression)
-            return "No regression detected";
-
-        var parts = new List<string>();
-
-        if (IsCpuTimeRegression)
-            parts.Add($"CPU {CpuTimeRatio:F1}x");
-        if (IsDurationRegression)
-            parts.Add($"Duration {DurationRatio:F1}x");
-        if (IsLogicalReadsRegression)
-            parts.Add($"Reads {LogicalReadsRatio:F1}x");
-        if (IsPlanChange)
-            parts.Add("Plan changed");
-
-        return string.Join(", ", parts);
-    }
+    public double? DurationCoefficientOfVariation =>
+        DurationStdDev.HasValue && AvgDurationUs > 0
+            ? DurationStdDev.Value / AvgDurationUs
+            : null;
 }
