@@ -1,5 +1,6 @@
 using System.Data;
 using DbExecPlanMonitor.Application.Interfaces;
+using DbExecPlanMonitor.Domain.Enums;
 using DbExecPlanMonitor.Domain.ValueObjects;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;

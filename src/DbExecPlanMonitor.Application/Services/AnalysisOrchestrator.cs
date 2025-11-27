@@ -3,7 +3,6 @@ using DbExecPlanMonitor.Application.Interfaces;
 using DbExecPlanMonitor.Application.Orchestrators;
 using DbExecPlanMonitor.Domain.Entities;
 using DbExecPlanMonitor.Domain.Enums;
-using DbExecPlanMonitor.Domain.Interfaces;
 using DbExecPlanMonitor.Domain.Services;
 using DbExecPlanMonitor.Domain.ValueObjects;
 using Microsoft.Extensions.Logging;

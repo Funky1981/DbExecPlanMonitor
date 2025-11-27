@@ -1,3 +1,4 @@
+using DbExecPlanMonitor.Domain.Enums;
 using DbExecPlanMonitor.Domain.ValueObjects;
 
 namespace DbExecPlanMonitor.Application.Interfaces;
@@ -222,57 +223,7 @@ public enum RegressionType
     PlanChangeWithRegression
 }
 
-/// <summary>
-/// Severity level of a regression.
-/// </summary>
-public enum RegressionSeverity
-{
-    /// <summary>
-    /// Minor regression (e.g., 25-50% worse).
-    /// </summary>
-    Low,
-    
-    /// <summary>
-    /// Moderate regression (e.g., 50-100% worse).
-    /// </summary>
-    Medium,
-    
-    /// <summary>
-    /// Significant regression (e.g., 100-500% worse).
-    /// </summary>
-    High,
-    
-    /// <summary>
-    /// Severe regression (e.g., 500%+ worse, or total execution failure).
-    /// </summary>
-    Critical
-}
-
-/// <summary>
-/// Workflow status of a regression event.
-/// </summary>
-public enum RegressionStatus
-{
-    /// <summary>
-    /// Newly detected, not yet reviewed.
-    /// </summary>
-    New,
-    
-    /// <summary>
-    /// Acknowledged by a human but not yet resolved.
-    /// </summary>
-    Acknowledged,
-    
-    /// <summary>
-    /// The issue has been resolved.
-    /// </summary>
-    Resolved,
-    
-    /// <summary>
-    /// Dismissed as not actionable (e.g., expected behavior).
-    /// </summary>
-    Dismissed
-}
+// Note: RegressionSeverity and RegressionStatus are defined in DbExecPlanMonitor.Domain.Enums
 
 /// <summary>
 /// Summary statistics for regression events over a time period.
