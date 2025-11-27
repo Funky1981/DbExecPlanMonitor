@@ -1,5 +1,5 @@
 using DbExecPlanMonitor.Domain.Entities;
-using DbExecPlanMonitor.Domain.Services;
+using DomainHotspot = DbExecPlanMonitor.Domain.Services.Hotspot;
 
 namespace DbExecPlanMonitor.Application.Services;
 
@@ -90,7 +90,7 @@ public sealed class DatabaseAnalysisResult
     /// <summary>
     /// The detected hotspots.
     /// </summary>
-    public IReadOnlyList<Hotspot>? Hotspots { get; init; }
+    public IReadOnlyList<DomainHotspot>? Hotspots { get; init; }
 
     /// <summary>
     /// Error message if analysis failed.
@@ -110,7 +110,7 @@ public sealed class HotspotAnalysisResult
     public required DateTime AnalyzedAtUtc { get; init; }
     public required TimeSpan Duration { get; init; }
 
-    public required IReadOnlyList<Hotspot> Hotspots { get; init; }
+    public required IReadOnlyList<DomainHotspot> Hotspots { get; init; }
 
     public int Count => Hotspots.Count;
     public string? Error { get; init; }

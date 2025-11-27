@@ -194,13 +194,26 @@ public class QueryFingerprint
         double avgLogicalReads,
         double avgRowsReturned)
     {
-        Baseline = new PlanBaseline(
-            this,
-            planSnapshot,
-            avgCpuTimeMs,
-            avgDurationMs,
-            avgLogicalReads,
-            avgRowsReturned);
+        Baseline = new PlanBaseline
+        {
+            Id = Guid.NewGuid(),
+            FingerprintId = Id,
+            InstanceName = MonitoredDatabase?.DatabaseInstance?.ServerName ?? string.Empty,
+            DatabaseName = MonitoredDatabase?.DatabaseName ?? string.Empty,
+            ComputedAtUtc = DateTime.UtcNow,
+            WindowStartUtc = DateTime.UtcNow.AddDays(-7),
+            WindowEndUtc = DateTime.UtcNow,
+            SampleCount = 1,
+            TotalExecutions = 1,
+            MedianDurationUs = (long)(avgDurationMs * 1000),
+            AvgDurationUs = (long)(avgDurationMs * 1000),
+            MedianCpuTimeUs = (long)(avgCpuTimeMs * 1000),
+            AvgCpuTimeUs = (long)(avgCpuTimeMs * 1000),
+            AvgLogicalReads = (long)avgLogicalReads,
+            AvgPhysicalReads = 0,
+            AvgLogicalWrites = 0,
+            TypicalPlanHash = planSnapshot.PlanHash != null ? System.Text.Encoding.UTF8.GetBytes(planSnapshot.PlanHash) : null
+        };
     }
 
     /// <summary>

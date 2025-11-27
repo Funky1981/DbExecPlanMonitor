@@ -250,14 +250,14 @@ public class PlanMetricSample
 
         return metric switch
         {
-            MetricType.CpuTime => baseline.BaselineAvgCpuTimeMs > 0 
-                ? AvgCpuTimeMs / baseline.BaselineAvgCpuTimeMs 
+            MetricType.CpuTime => baseline.AvgCpuTimeUs > 0 
+                ? (AvgCpuTimeMs * 1000) / baseline.AvgCpuTimeUs 
                 : 0,
-            MetricType.Duration => baseline.BaselineAvgDurationMs > 0 
-                ? AvgDurationMs / baseline.BaselineAvgDurationMs 
+            MetricType.Duration => baseline.AvgDurationUs > 0 
+                ? (AvgDurationMs * 1000) / baseline.AvgDurationUs 
                 : 0,
-            MetricType.LogicalReads => baseline.BaselineAvgLogicalReads > 0 
-                ? AvgLogicalReads / baseline.BaselineAvgLogicalReads 
+            MetricType.LogicalReads => baseline.AvgLogicalReads > 0 
+                ? AvgLogicalReads / baseline.AvgLogicalReads 
                 : 0,
             _ => 0
         };

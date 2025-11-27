@@ -3,10 +3,12 @@ using DbExecPlanMonitor.Application.Interfaces;
 using DbExecPlanMonitor.Application.Orchestrators;
 using DbExecPlanMonitor.Domain.Entities;
 using DbExecPlanMonitor.Domain.Enums;
+using DbExecPlanMonitor.Domain.Interfaces;
 using DbExecPlanMonitor.Domain.Services;
 using DbExecPlanMonitor.Domain.ValueObjects;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using DomainHotspot = DbExecPlanMonitor.Domain.Services.Hotspot;
 
 namespace DbExecPlanMonitor.Application.Services;
 
@@ -133,7 +135,7 @@ public sealed class AnalysisOrchestrator : IAnalysisOrchestrator
     {
         var stopwatch = Stopwatch.StartNew();
         var regressions = new List<RegressionEvent>();
-        var hotspots = new List<Hotspot>();
+        var hotspots = new List<DomainHotspot>();
         var fingerprintsAnalyzed = 0;
 
         _logger.LogDebug("Analyzing {Instance}/{Database}", instanceName, databaseName);
