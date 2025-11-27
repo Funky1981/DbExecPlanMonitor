@@ -6,8 +6,11 @@ using Microsoft.Extensions.Options;
 using DbExecPlanMonitor.Application.Interfaces;
 using DbExecPlanMonitor.Application.Orchestrators;
 using DbExecPlanMonitor.Application.Services;
+using DbExecPlanMonitor.Domain.Services;
+using DbExecPlanMonitor.Infrastructure.Data;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer;
 using DbExecPlanMonitor.Infrastructure.Data.SqlServer.Models;
+using DbExecPlanMonitor.Infrastructure.Messaging;
 using DbExecPlanMonitor.Infrastructure.Persistence;
 
 namespace DbExecPlanMonitor.Infrastructure;
@@ -94,6 +97,63 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services)
     {
         services.AddHostedService<MonitoringConfigurationValidator>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds alerting services (channels and orchestrator).
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAlerting(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind alerting configuration
+        services.Configure<AlertingOptions>(
+            configuration.GetSection(AlertingOptions.SectionName));
+        services.Configure<EmailChannelOptions>(
+            configuration.GetSection(EmailChannelOptions.SectionName));
+        services.Configure<TeamsChannelOptions>(
+            configuration.GetSection(TeamsChannelOptions.SectionName));
+        services.Configure<SlackChannelOptions>(
+            configuration.GetSection(SlackChannelOptions.SectionName));
+
+        // Register alert channels (all channels are registered, but each checks IsEnabled)
+        services.AddSingleton<IAlertChannel, LogOnlyAlertChannel>();
+        services.AddSingleton<IAlertChannel, EmailAlertChannel>();
+        services.AddSingleton<IAlertChannel, TeamsAlertChannel>();
+        services.AddSingleton<IAlertChannel, SlackAlertChannel>();
+
+        // Register orchestrator
+        services.AddSingleton<IAlertOrchestrator, AlertOrchestrator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds remediation services (advisor and executor).
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRemediation(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind remediation configuration
+        services.Configure<RemediationOptions>(
+            configuration.GetSection(RemediationOptions.SectionName));
+        services.Configure<RemediationExecutorOptions>(
+            configuration.GetSection(RemediationExecutorOptions.SectionName));
+
+        // Register domain service
+        services.AddSingleton<IRemediationAdvisor, RemediationAdvisor>();
+
+        // Register infrastructure executor
+        services.AddSingleton<IRemediationExecutor, SqlRemediationExecutor>();
+
         return services;
     }
 }
