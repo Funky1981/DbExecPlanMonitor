@@ -108,7 +108,11 @@ public class RemediationSuggestion
     public string? DismissalReason { get; private set; }
 
     // Private constructor for EF Core
-    private RemediationSuggestion() { }
+    private RemediationSuggestion()
+    {
+        Title = null!;
+        Description = null!;
+    }
 
     /// <summary>
     /// Creates a new remediation suggestion. Called by RegressionEvent.AddSuggestion().

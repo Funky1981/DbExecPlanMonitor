@@ -125,7 +125,11 @@ public class ExecutionPlanSnapshot
     public IReadOnlyCollection<PlanMetricSample> MetricSamples => _metricSamples.AsReadOnly();
 
     // Private constructor for EF Core
-    private ExecutionPlanSnapshot() { }
+    private ExecutionPlanSnapshot()
+    {
+        PlanHash = null!;
+        PlanXml = null!;
+    }
 
     /// <summary>
     /// Creates a new execution plan snapshot. Called by QueryFingerprint.AddPlanSnapshot().

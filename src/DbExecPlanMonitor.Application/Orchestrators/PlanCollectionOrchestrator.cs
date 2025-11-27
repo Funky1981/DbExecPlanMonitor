@@ -284,7 +284,7 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
                     dbConfig.Name,
                     fingerprint.Hash,
                     fingerprint.SampleText,
-                    fingerprint.NormalizedText,
+                    fingerprint.NormalizedText ?? fingerprint.SampleText,
                     ct);
 
                 if (fingerprintResult.IsNew)
@@ -363,16 +363,17 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
     /// <summary>
     /// Resolves which databases to collect from, either from explicit config or auto-discovery.
     /// </summary>
-    private async Task<IReadOnlyList<MonitoredDatabaseOptions>> GetDatabasesToCollectAsync(
+    private Task<IReadOnlyList<MonitoredDatabaseOptions>> GetDatabasesToCollectAsync(
         MonitoredInstanceOptions instanceConfig,
         CancellationToken ct)
     {
         // If databases are explicitly configured, use those
         if (instanceConfig.Databases?.Any() == true)
         {
-            return instanceConfig.Databases
-                .Where(d => d.Enabled)
-                .ToList();
+            return Task.FromResult<IReadOnlyList<MonitoredDatabaseOptions>>(
+                instanceConfig.Databases
+                    .Where(d => d.Enabled)
+                    .ToList());
         }
 
         // Otherwise, auto-discover user databases
@@ -382,6 +383,6 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
             "Database auto-discovery not yet implemented.",
             instanceConfig.Name);
 
-        return [];
+        return Task.FromResult<IReadOnlyList<MonitoredDatabaseOptions>>([]);
     }
 }

@@ -75,7 +75,10 @@ public class MonitoredDatabase
     public IReadOnlyCollection<QueryFingerprint> QueryFingerprints => _queryFingerprints.AsReadOnly();
 
     // Private constructor for EF Core
-    private MonitoredDatabase() { }
+    private MonitoredDatabase()
+    {
+        DatabaseName = null!;
+    }
 
     /// <summary>
     /// Creates a new monitored database. Called by DatabaseInstance.AddDatabase().

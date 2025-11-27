@@ -51,7 +51,12 @@ public class DatabaseInstance
     public IReadOnlyCollection<MonitoredDatabase> MonitoredDatabases => _monitoredDatabases.AsReadOnly();
 
     // Private constructor for EF Core / deserialization
-    private DatabaseInstance() { }
+    private DatabaseInstance()
+    {
+        ServerName = null!;
+        DisplayName = null!;
+        Environment = null!;
+    }
 
     /// <summary>
     /// Creates a new database instance to monitor.

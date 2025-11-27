@@ -104,7 +104,12 @@ public class QueryFingerprint
     public PlanBaseline? Baseline { get; private set; }
 
     // Private constructor for EF Core
-    private QueryFingerprint() { }
+    private QueryFingerprint()
+    {
+        QueryHash = null!;
+        NormalizedQueryText = null!;
+        QueryTextPreview = null!;
+    }
 
     /// <summary>
     /// Creates a new query fingerprint. Called by MonitoredDatabase.RegisterQueryFingerprint().
