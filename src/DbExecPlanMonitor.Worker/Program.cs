@@ -3,6 +3,7 @@ using DbExecPlanMonitor.Worker.HealthChecks;
 using DbExecPlanMonitor.Worker.Scheduling;
 using DbExecPlanMonitor.Infrastructure;
 using DbExecPlanMonitor.Infrastructure.Configuration;
+using DbExecPlanMonitor.Infrastructure.Logging;
 using Serilog;
 
 // Configure Serilog early for bootstrap logging
@@ -42,6 +43,7 @@ try
     builder.Services.AddAnalysis(builder.Configuration);
     builder.Services.AddAlerting(builder.Configuration);
     builder.Services.AddRemediation(builder.Configuration);
+    builder.Services.AddTelemetryAndAuditing(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
     // Register scheduling options
