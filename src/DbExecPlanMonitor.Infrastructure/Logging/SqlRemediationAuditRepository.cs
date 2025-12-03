@@ -162,6 +162,29 @@ public sealed class SqlRemediationAuditRepository : IRemediationAuditRepository
         }, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<RemediationAuditRecord>> GetRecentAsync(
+        string instanceName,
+        TimeSpan window,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT Id, Timestamp, InstanceName, DatabaseName, QueryFingerprint, QueryHash,
+                   RegressionEventId, RemediationSuggestionId, RemediationType,
+                   SqlStatement, IsDryRun, Success, ErrorMessage, SqlErrorNumber,
+                   DurationMs, InitiatedBy, Notes, MachineName, ServiceVersion
+            FROM monitoring.RemediationAudit
+            WHERE InstanceName = @InstanceName
+              AND Timestamp >= @Since
+            ORDER BY Timestamp DESC";
+
+        var since = DateTimeOffset.UtcNow.Subtract(window);
+        return await ExecuteQueryAsync(sql, new Dictionary<string, object>
+        {
+            ["@InstanceName"] = instanceName,
+            ["@Since"] = since
+        }, cancellationToken);
+    }
+
     public async Task<RemediationAuditSummary> GetSummaryAsync(
         DateTimeOffset from,
         DateTimeOffset to,

@@ -50,6 +50,18 @@ public interface IRemediationAuditRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets recent remediations for an instance within a time window.
+    /// Used for rate limiting checks.
+    /// </summary>
+    /// <param name="instanceName">The instance name.</param>
+    /// <param name="window">Time window to look back.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<RemediationAuditRecord>> GetRecentAsync(
+        string instanceName,
+        TimeSpan window,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets summary statistics for a time period.
     /// </summary>
     /// <param name="from">Start of time range.</param>
