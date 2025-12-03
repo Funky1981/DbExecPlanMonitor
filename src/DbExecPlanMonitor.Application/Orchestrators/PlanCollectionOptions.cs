@@ -1,10 +1,13 @@
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+
 namespace DbExecPlanMonitor.Application.Orchestrators;
 
 /// <summary>
 /// Configuration for plan collection behavior.
 /// Loaded from appsettings.json or other configuration sources.
 /// </summary>
-public sealed class PlanCollectionOptions
+public sealed class PlanCollectionOptions : IValidatableObject
 {
     /// <summary>
     /// Configuration section name in appsettings.json.
@@ -81,6 +84,33 @@ public sealed class PlanCollectionOptions
     /// Default: 1 (sequential).
     /// </summary>
     public int MaxDatabaseParallelism { get; set; } = 1;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (CollectionInterval <= TimeSpan.Zero)
+            yield return new ValidationResult("CollectionInterval must be greater than zero.", [nameof(CollectionInterval)]);
+
+        if (TopNQueries <= 0)
+            yield return new ValidationResult("TopNQueries must be greater than zero.", [nameof(TopNQueries)]);
+
+        if (LookbackWindow <= TimeSpan.Zero)
+            yield return new ValidationResult("LookbackWindow must be greater than zero.", [nameof(LookbackWindow)]);
+
+        if (MinimumExecutionCount < 0)
+            yield return new ValidationResult("MinimumExecutionCount cannot be negative.", [nameof(MinimumExecutionCount)]);
+
+        if (MinimumElapsedTimeMs < 0)
+            yield return new ValidationResult("MinimumElapsedTimeMs cannot be negative.", [nameof(MinimumElapsedTimeMs)]);
+
+        if (CollectionTimeout <= TimeSpan.Zero)
+            yield return new ValidationResult("CollectionTimeout must be greater than zero.", [nameof(CollectionTimeout)]);
+
+        if (MaxInstanceParallelism <= 0)
+            yield return new ValidationResult("MaxInstanceParallelism must be at least 1.", [nameof(MaxInstanceParallelism)]);
+
+        if (MaxDatabaseParallelism <= 0)
+            yield return new ValidationResult("MaxDatabaseParallelism must be at least 1.", [nameof(MaxDatabaseParallelism)]);
+    }
 }
 
 /// <summary>

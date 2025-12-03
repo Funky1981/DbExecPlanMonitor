@@ -241,6 +241,31 @@ public sealed class SqlPlanMetricsRepository : RepositoryBase, IPlanMetricsRepos
     }
 
     /// <inheritdoc />
+    public async Task<PlanMetricSampleRecord?> GetLatestSampleForFingerprintAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT TOP (1)
+                Id, FingerprintId, InstanceName, DatabaseName, SampledAtUtc,
+                PlanHash, QueryStoreQueryId, QueryStorePlanId,
+                ExecutionCount, ExecutionCountDelta,
+                TotalCpuTimeUs, AvgCpuTimeUs, MinCpuTimeUs, MaxCpuTimeUs,
+                TotalDurationUs, AvgDurationUs, MinDurationUs, MaxDurationUs,
+                TotalLogicalReads, AvgLogicalReads, TotalLogicalWrites, TotalPhysicalReads,
+                AvgMemoryGrantKb, MaxMemoryGrantKb, AvgSpillsKb
+            FROM monitoring.PlanMetricSample
+            WHERE FingerprintId = @FingerprintId
+            ORDER BY SampledAtUtc DESC";
+
+        return await ExecuteQuerySingleAsync(
+            sql,
+            MapSample,
+            p => AddGuidParameter(p, "@FingerprintId", fingerprintId),
+            ct);
+    }
+
+    /// <inheritdoc />
     public async Task<AggregatedMetrics?> GetAggregatedMetricsAsync(
         Guid fingerprintId,
         TimeWindow window,
@@ -265,7 +290,12 @@ public sealed class SqlPlanMetricsRepository : RepositoryBase, IPlanMetricsRepos
                 MIN(AvgLogicalReads) AS MinLogicalReads,
                 MAX(AvgLogicalReads) AS MaxLogicalReads,
                 AVG(AvgLogicalReads) AS AvgLogicalReads,
-                STDEV(AvgDurationUs) AS DurationStdDev
+                STDEV(AvgDurationUs) AS DurationStdDev,
+                AVG(TotalLogicalWrites / NULLIF(ExecutionCount, 0)) AS AvgLogicalWrites,
+                MAX(TotalLogicalWrites / NULLIF(ExecutionCount, 0)) AS MaxLogicalWrites,
+                AVG(TotalPhysicalReads / NULLIF(ExecutionCount, 0)) AS AvgPhysicalReads,
+                AVG(AvgSpillsKb) AS AvgSpillsKb,
+                MAX(AvgSpillsKb) AS MaxSpillsKb
             FROM monitoring.PlanMetricSample
             WHERE FingerprintId = @FingerprintId
               AND SampledAtUtc BETWEEN @StartUtc AND @EndUtc";
@@ -410,6 +440,11 @@ public sealed class SqlPlanMetricsRepository : RepositoryBase, IPlanMetricsRepos
             MaxLogicalReads = reader.GetInt64(14),
             AvgLogicalReads = reader.GetInt64(15),
             DurationStdDev = reader.IsDBNull(16) ? null : reader.GetDouble(16),
+            AvgLogicalWrites = reader.IsDBNull(17) ? 0 : reader.GetInt64(17),
+            MaxLogicalWrites = reader.IsDBNull(18) ? null : reader.GetInt64(18),
+            AvgPhysicalReads = reader.IsDBNull(19) ? 0 : reader.GetInt64(19),
+            AvgSpillsKb = reader.IsDBNull(20) ? null : reader.GetInt64(20),
+            MaxSpillsKb = reader.IsDBNull(21) ? null : reader.GetInt64(21),
             Window = window
         };
     }

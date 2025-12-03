@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using DbExecPlanMonitor.Domain.Services;
 
 namespace DbExecPlanMonitor.Application.Services;
@@ -5,7 +7,7 @@ namespace DbExecPlanMonitor.Application.Services;
 /// <summary>
 /// Configuration options for the analysis engine.
 /// </summary>
-public sealed class AnalysisOptions
+public sealed class AnalysisOptions : IValidatableObject
 {
     /// <summary>
     /// Configuration section name in appsettings.json.
@@ -75,4 +77,28 @@ public sealed class AnalysisOptions
     /// Default: true.
     /// </summary>
     public bool ContinueOnError { get; set; } = true;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (RecentWindow <= TimeSpan.Zero)
+            yield return new ValidationResult("RecentWindow must be greater than zero.", [nameof(RecentWindow)]);
+
+        if (HotspotWindow <= TimeSpan.Zero)
+            yield return new ValidationResult("HotspotWindow must be greater than zero.", [nameof(HotspotWindow)]);
+
+        if (AnalysisInterval <= TimeSpan.Zero)
+            yield return new ValidationResult("AnalysisInterval must be greater than zero.", [nameof(AnalysisInterval)]);
+
+        if (AutoResolutionCheckInterval <= TimeSpan.Zero)
+            yield return new ValidationResult("AutoResolutionCheckInterval must be greater than zero.", [nameof(AutoResolutionCheckInterval)]);
+
+        if (BaselineLookbackDays <= 0)
+            yield return new ValidationResult("BaselineLookbackDays must be greater than zero.", [nameof(BaselineLookbackDays)]);
+
+        if (BaselineMaxAge <= TimeSpan.Zero)
+            yield return new ValidationResult("BaselineMaxAge must be greater than zero.", [nameof(BaselineMaxAge)]);
+
+        if (MinimumBaselineSamples <= 0)
+            yield return new ValidationResult("MinimumBaselineSamples must be greater than zero.", [nameof(MinimumBaselineSamples)]);
+    }
 }

@@ -146,8 +146,8 @@ public sealed class AnalysisOrchestrator : IAnalysisOrchestrator
                 DateTime.UtcNow.Subtract(options.RecentWindow),
                 DateTime.UtcNow);
 
-            // Get fingerprints for this database
-            var fingerprints = await _fingerprintRepository.GetByDatabaseAsync(databaseName, ct);
+            // Get fingerprints scoped to this instance/database to avoid cross-instance collisions
+            var fingerprints = await _fingerprintRepository.GetByInstanceAndDatabaseAsync(instanceName, databaseName, ct);
 
             foreach (var fingerprint in fingerprints)
             {
@@ -263,9 +263,10 @@ public sealed class AnalysisOrchestrator : IAnalysisOrchestrator
                 DateTime.UtcNow.Subtract(options.HotspotWindow),
                 DateTime.UtcNow);
 
-            // Get latest samples per fingerprint
+            // Get latest samples per fingerprint WITH time filter to prevent stale data
             var samples = await _metricsRepository.GetLatestSamplesPerFingerprintAsync(
                 databaseName,
+                lookbackWindow,  // Use time-filtered overload
                 options.HotspotRules.TopN * 2, // Get extra to account for filtering
                 ct);
 

@@ -121,6 +121,55 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<QueryFingerprintRecord>> GetByInstanceAndDatabaseAsync(
+        string instanceName,
+        string databaseName,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            FROM monitoring.QueryFingerprint
+            WHERE InstanceName = @InstanceName
+              AND DatabaseName = @DatabaseName
+            ORDER BY LastSeenUtc DESC";
+
+        var results = await ExecuteQueryAsync(
+            sql,
+            MapFingerprint,
+            p =>
+            {
+                AddStringParameter(p, "@InstanceName", instanceName, 128);
+                AddStringParameter(p, "@DatabaseName", databaseName, 128);
+            },
+            ct);
+
+        return results;
+    }
+
+    /// <inheritdoc />
+    public async Task<QueryFingerprintRecord?> GetByHashAsync(
+        string instanceName,
+        byte[] queryHash,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            FROM monitoring.QueryFingerprint
+            WHERE InstanceName = @InstanceName
+              AND QueryHash = @QueryHash";
+
+        return await ExecuteQuerySingleAsync(
+            sql,
+            MapFingerprint,
+            p =>
+            {
+                AddStringParameter(p, "@InstanceName", instanceName, 128);
+                AddBinaryParameter(p, "@QueryHash", queryHash, 32);
+            },
+            ct);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<QueryFingerprintRecord>> GetActiveInWindowAsync(
         TimeWindow window,
         CancellationToken ct = default)

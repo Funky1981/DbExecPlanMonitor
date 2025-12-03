@@ -70,6 +70,9 @@ public sealed class PlanBaseline
     public long? MaxLogicalReads { get; init; }
     public long AvgPhysicalReads { get; init; }
     public long AvgLogicalWrites { get; init; }
+    public long? MaxLogicalWrites { get; init; }
+    public long? AvgSpillsKb { get; init; }
+    public long? MaxSpillsKb { get; init; }
 
     // Standard deviation for variance detection
     public double? DurationStdDev { get; init; }
