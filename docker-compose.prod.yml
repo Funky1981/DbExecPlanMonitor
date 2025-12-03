@@ -1,0 +1,22 @@
+# Docker Compose override for production-like settings
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+version: '3.8'
+
+services:
+  monitor:
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - Monitoring__Security__Mode=ReadOnly
+      - Monitoring__Security__EnableRemediation=false
+      - Monitoring__Security__DryRunMode=true
+      - Serilog__MinimumLevel__Default=Warning
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M

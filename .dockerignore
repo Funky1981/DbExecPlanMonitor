@@ -1,0 +1,35 @@
+# Ignore Docker files not needed for build
+docker-compose*.yml
+.dockerignore
+
+# Ignore git
+.git
+.gitignore
+.gitattributes
+
+# Ignore IDE files
+.vs
+.vscode
+*.user
+*.suo
+
+# Ignore build outputs (we build in container)
+**/bin
+**/obj
+**/out
+
+# Ignore test projects (not needed in production image)
+tests/
+
+# Ignore documentation
+Docs/
+*.md
+!README.md
+
+# Ignore scripts (mounted separately if needed)
+scripts/
+
+# Ignore local development files
+*.local
+*.env
+appsettings.Development.json
