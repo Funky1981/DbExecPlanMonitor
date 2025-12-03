@@ -44,6 +44,7 @@ try
     builder.Services.AddAlerting(builder.Configuration);
     builder.Services.AddRemediation(builder.Configuration);
     builder.Services.AddTelemetryAndAuditing(builder.Configuration);
+    builder.Services.AddSecurityServices(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
     // Register scheduling options

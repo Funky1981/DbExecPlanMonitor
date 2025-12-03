@@ -61,6 +61,11 @@ public static class LogEventIds
     public const int RemediationSkipped = 1313;
     public const int RemediationDryRun = 1314;
     public const int RemediationBlocked = 1315;
+    public const int RemediationCheckStarted = 1320;
+    public const int RemediationCheckPassed = 1321;
+    public const int RemediationCheckFailed = 1322;
+    public const int RemediationDenied = 1323;
+    public const int RemediationRateLimited = 1324;
 
     // Baseline Management (1400-1499)
     public const int BaselineRebuildStarted = 1400;
