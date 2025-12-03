@@ -49,8 +49,25 @@ public interface IPlanMetricsRepository
     /// Gets the most recent sample for each fingerprint in a database.
     /// Useful for building a current "state of the world" view.
     /// </summary>
+    /// <param name="databaseName">The database name to filter by</param>
+    /// <param name="topN">Maximum number of fingerprints to return</param>
+    /// <param name="ct">Cancellation token</param>
     Task<IReadOnlyList<PlanMetricSampleRecord>> GetLatestSamplesPerFingerprintAsync(
         string databaseName,
+        int topN = 100,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the most recent sample for each fingerprint in a database within a time window.
+    /// Prevents returning stale data when collection has been paused.
+    /// </summary>
+    /// <param name="databaseName">The database name to filter by</param>
+    /// <param name="window">Time window to filter samples (only samples within window are considered)</param>
+    /// <param name="topN">Maximum number of fingerprints to return</param>
+    /// <param name="ct">Cancellation token</param>
+    Task<IReadOnlyList<PlanMetricSampleRecord>> GetLatestSamplesPerFingerprintAsync(
+        string databaseName,
+        TimeWindow window,
         int topN = 100,
         CancellationToken ct = default);
 

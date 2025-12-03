@@ -80,6 +80,7 @@ public interface IQueryFingerprintRepository
 public sealed class QueryFingerprintRecord
 {
     public required Guid Id { get; init; }
+    public required string InstanceName { get; init; }
     public required byte[] QueryHash { get; init; }
     public required string QueryTextSample { get; init; }
     public required string DatabaseName { get; init; }

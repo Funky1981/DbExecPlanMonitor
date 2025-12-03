@@ -308,7 +308,9 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
                     TotalLogicalReads = stat.TotalLogicalReads,
                     AvgLogicalReads = (long)stat.AvgLogicalReads,
                     TotalLogicalWrites = stat.TotalLogicalWrites,
-                    TotalPhysicalReads = stat.TotalPhysicalReads
+                    TotalPhysicalReads = stat.TotalPhysicalReads,
+                    // Populate plan details from provider
+                    PlanHash = stat.PlanHandle // PlanHandle can serve as plan identifier
                 };
 
                 await _metricsRepository.SaveSampleAsync(instanceConfig.Name, metrics, ct);

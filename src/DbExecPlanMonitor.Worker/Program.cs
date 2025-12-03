@@ -4,6 +4,7 @@ using DbExecPlanMonitor.Worker.Scheduling;
 using DbExecPlanMonitor.Infrastructure;
 using DbExecPlanMonitor.Infrastructure.Configuration;
 using DbExecPlanMonitor.Infrastructure.Logging;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 // Configure Serilog early for bootstrap logging
@@ -47,9 +48,10 @@ try
     builder.Services.AddSecurityServices(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
-    // Register scheduling options
+    // Register scheduling options with validation
     builder.Services.Configure<SchedulingOptions>(
         builder.Configuration.GetSection(SchedulingOptions.SectionName));
+    builder.Services.AddSingleton<IValidateOptions<SchedulingOptions>, SchedulingOptionsValidator>();
 
     // Register the background worker services
     builder.Services.AddHostedService<PlanCollectionHostedService>();

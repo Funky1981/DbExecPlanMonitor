@@ -65,7 +65,7 @@ public sealed class BaselineService : IBaselineService
         {
             Id = Guid.NewGuid(),
             FingerprintId = fingerprintId,
-            InstanceName = "", // Will be populated from fingerprint context
+            InstanceName = fingerprint.InstanceName, // Use instance from fingerprint
             DatabaseName = fingerprint.DatabaseName,
             ComputedAtUtc = DateTime.UtcNow,
             WindowStartUtc = startUtc,
