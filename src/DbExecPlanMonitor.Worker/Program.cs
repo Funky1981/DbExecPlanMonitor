@@ -2,6 +2,7 @@ using DbExecPlanMonitor.Worker;
 using DbExecPlanMonitor.Worker.HealthChecks;
 using DbExecPlanMonitor.Worker.Scheduling;
 using DbExecPlanMonitor.Infrastructure;
+using DbExecPlanMonitor.Infrastructure.Configuration;
 using Serilog;
 
 // Configure Serilog early for bootstrap logging
@@ -29,6 +30,10 @@ try
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30);
     });
+
+    // Register configuration services with validation
+    builder.Services.AddMonitoringConfiguration(builder.Configuration);
+    builder.Services.AddInstanceConfiguration(builder.Configuration);
 
     // Register Infrastructure layer services (SQL Server monitoring)
     builder.Services.AddSqlServerMonitoring(builder.Configuration);
