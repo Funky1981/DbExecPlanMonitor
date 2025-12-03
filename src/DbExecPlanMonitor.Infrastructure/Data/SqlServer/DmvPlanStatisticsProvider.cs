@@ -210,6 +210,7 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
         return await GetTopQueriesFromDmvDirectAsync(
             connection,
             topN,
+            window,
             cancellationToken);
     }
 
@@ -239,10 +240,12 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
 
     /// <summary>
     /// Gets top queries from DMVs using an open connection.
+    /// Applies lookback filtering using last_execution_time.
     /// </summary>
     private async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesFromDmvDirectAsync(
         SqlConnection connection,
         int topN,
+        TimeWindow window,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -269,10 +272,12 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
             CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
             WHERE qs.execution_count > 0
               AND st.text IS NOT NULL
+              AND qs.last_execution_time >= @LookbackStart
             ORDER BY qs.total_elapsed_time DESC";
         
         command.CommandTimeout = 120;
         command.Parameters.AddWithValue("@TopN", topN);
+        command.Parameters.AddWithValue("@LookbackStart", window.StartUtc);
 
         var results = new List<CollectedQueryStatistics>();
         

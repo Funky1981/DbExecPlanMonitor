@@ -191,6 +191,56 @@ public sealed class SqlPlanMetricsRepository : RepositoryBase, IPlanMetricsRepos
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<PlanMetricSampleRecord>> GetLatestSamplesPerFingerprintAsync(
+        string databaseName,
+        TimeWindow window,
+        int topN = 100,
+        CancellationToken ct = default)
+    {
+        // Uses ROW_NUMBER to get the most recent sample per fingerprint within the time window
+        const string sql = @"
+            WITH RankedSamples AS (
+                SELECT 
+                    Id, FingerprintId, InstanceName, DatabaseName, SampledAtUtc,
+                    PlanHash, QueryStoreQueryId, QueryStorePlanId,
+                    ExecutionCount, ExecutionCountDelta,
+                    TotalCpuTimeUs, AvgCpuTimeUs, MinCpuTimeUs, MaxCpuTimeUs,
+                    TotalDurationUs, AvgDurationUs, MinDurationUs, MaxDurationUs,
+                    TotalLogicalReads, AvgLogicalReads, TotalLogicalWrites, TotalPhysicalReads,
+                    AvgMemoryGrantKb, MaxMemoryGrantKb, AvgSpillsKb,
+                    ROW_NUMBER() OVER (PARTITION BY FingerprintId ORDER BY SampledAtUtc DESC) AS rn
+                FROM monitoring.PlanMetricSample
+                WHERE DatabaseName = @DatabaseName
+                  AND SampledAtUtc BETWEEN @StartUtc AND @EndUtc
+            )
+            SELECT TOP (@TopN)
+                Id, FingerprintId, InstanceName, DatabaseName, SampledAtUtc,
+                PlanHash, QueryStoreQueryId, QueryStorePlanId,
+                ExecutionCount, ExecutionCountDelta,
+                TotalCpuTimeUs, AvgCpuTimeUs, MinCpuTimeUs, MaxCpuTimeUs,
+                TotalDurationUs, AvgDurationUs, MinDurationUs, MaxDurationUs,
+                TotalLogicalReads, AvgLogicalReads, TotalLogicalWrites, TotalPhysicalReads,
+                AvgMemoryGrantKb, MaxMemoryGrantKb, AvgSpillsKb
+            FROM RankedSamples
+            WHERE rn = 1
+            ORDER BY TotalCpuTimeUs DESC";
+
+        var results = await ExecuteQueryAsync(
+            sql,
+            MapSample,
+            p =>
+            {
+                AddStringParameter(p, "@DatabaseName", databaseName, 128);
+                AddDateTimeParameter(p, "@StartUtc", window.StartUtc);
+                AddDateTimeParameter(p, "@EndUtc", window.EndUtc);
+                AddIntParameter(p, "@TopN", topN);
+            },
+            ct);
+
+        return results;
+    }
+
+    /// <inheritdoc />
     public async Task<AggregatedMetrics?> GetAggregatedMetricsAsync(
         Guid fingerprintId,
         TimeWindow window,

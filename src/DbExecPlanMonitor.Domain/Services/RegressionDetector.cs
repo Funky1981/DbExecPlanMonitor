@@ -203,24 +203,51 @@ public sealed class RegressionDetector : IRegressionDetector
 
     /// <summary>
     /// Aggregates multiple samples into a single metric summary.
+    /// Uses execution-count weighted averages and proper percentile calculation.
     /// </summary>
     private static AggregatedMetricsForAnalysis AggregateSamples(Guid fingerprintId, IReadOnlyList<MetricSample> samples)
     {
         var totalExecutions = samples.Sum(s => s.ExecutionCount);
-        var avgDuration = (long)samples.Average(s => s.AvgDurationUs);
-        var avgCpu = (long)samples.Average(s => s.AvgCpuTimeUs);
-        var avgReads = (long)samples.Average(s => s.AvgLogicalReads);
+        
+        // Calculate execution-weighted averages
+        long avgDuration;
+        long avgCpu;
+        long avgReads;
+        
+        if (totalExecutions > 0)
+        {
+            avgDuration = (long)samples.Sum(s => s.AvgDurationUs * s.ExecutionCount) / totalExecutions;
+            avgCpu = (long)samples.Sum(s => s.AvgCpuTimeUs * s.ExecutionCount) / totalExecutions;
+            avgReads = (long)samples.Sum(s => s.AvgLogicalReads * s.ExecutionCount) / totalExecutions;
+        }
+        else
+        {
+            avgDuration = (long)samples.Average(s => s.AvgDurationUs);
+            avgCpu = (long)samples.Average(s => s.AvgCpuTimeUs);
+            avgReads = (long)samples.Average(s => s.AvgLogicalReads);
+        }
 
-        // Calculate P95 from available P95 values, or estimate from avg
+        // Calculate P95 from available P95 values using proper percentile calculation
+        // Sort ASCENDING and take the value at the 95th percentile position
         var p95Durations = samples.Where(s => s.P95DurationUs.HasValue).Select(s => s.P95DurationUs!.Value).ToList();
-        var p95Duration = p95Durations.Count > 0 
-            ? (long?)p95Durations.OrderByDescending(x => x).Skip((int)(p95Durations.Count * 0.05)).FirstOrDefault()
-            : null;
+        long? p95Duration = null;
+        if (p95Durations.Count > 0)
+        {
+            p95Durations.Sort(); // Ascending order
+            var p95Index = (int)Math.Ceiling(p95Durations.Count * 0.95) - 1;
+            p95Index = Math.Max(0, Math.Min(p95Index, p95Durations.Count - 1));
+            p95Duration = p95Durations[p95Index];
+        }
 
         var p95CpuTimes = samples.Where(s => s.P95CpuTimeUs.HasValue).Select(s => s.P95CpuTimeUs!.Value).ToList();
-        var p95Cpu = p95CpuTimes.Count > 0
-            ? (long?)p95CpuTimes.OrderByDescending(x => x).Skip((int)(p95CpuTimes.Count * 0.05)).FirstOrDefault()
-            : null;
+        long? p95Cpu = null;
+        if (p95CpuTimes.Count > 0)
+        {
+            p95CpuTimes.Sort(); // Ascending order
+            var p95Index = (int)Math.Ceiling(p95CpuTimes.Count * 0.95) - 1;
+            p95Index = Math.Max(0, Math.Min(p95Index, p95CpuTimes.Count - 1));
+            p95Cpu = p95CpuTimes[p95Index];
+        }
 
         var minTime = samples.Min(s => s.SampledAtUtc);
         var maxTime = samples.Max(s => s.SampledAtUtc);

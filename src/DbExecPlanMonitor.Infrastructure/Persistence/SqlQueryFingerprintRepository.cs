@@ -74,7 +74,7 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
     public async Task<QueryFingerprintRecord?> GetByIdAsync(Guid fingerprintId, CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT Id, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
             FROM monitoring.QueryFingerprint
             WHERE Id = @Id";
 
@@ -89,7 +89,7 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
     public async Task<QueryFingerprintRecord?> GetByHashAsync(byte[] queryHash, CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT Id, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
             FROM monitoring.QueryFingerprint
             WHERE QueryHash = @QueryHash";
 
@@ -106,7 +106,7 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
         CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT Id, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
             FROM monitoring.QueryFingerprint
             WHERE DatabaseName = @DatabaseName
             ORDER BY LastSeenUtc DESC";
@@ -126,7 +126,7 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
         CancellationToken ct = default)
     {
         const string sql = @"
-            SELECT Id, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
+            SELECT Id, InstanceName, QueryHash, QueryTextSample, DatabaseName, FirstSeenUtc, LastSeenUtc
             FROM monitoring.QueryFingerprint
             WHERE LastSeenUtc BETWEEN @StartUtc AND @EndUtc
             ORDER BY LastSeenUtc DESC";
@@ -239,11 +239,12 @@ public sealed class SqlQueryFingerprintRepository : RepositoryBase, IQueryFinger
         return new QueryFingerprintRecord
         {
             Id = reader.GetGuid(0),
-            QueryHash = GetBytes(reader, 1),
-            QueryTextSample = reader.GetString(2),
-            DatabaseName = reader.GetString(3),
-            FirstSeenUtc = reader.GetDateTime(4),
-            LastSeenUtc = reader.GetDateTime(5)
+            InstanceName = reader.GetString(1),
+            QueryHash = GetBytes(reader, 2),
+            QueryTextSample = reader.GetString(3),
+            DatabaseName = reader.GetString(4),
+            FirstSeenUtc = reader.GetDateTime(5),
+            LastSeenUtc = reader.GetDateTime(6)
         };
     }
 
