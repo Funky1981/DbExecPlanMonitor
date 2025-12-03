@@ -1,4 +1,6 @@
 using DbExecPlanMonitor.Worker;
+using DbExecPlanMonitor.Worker.HealthChecks;
+using DbExecPlanMonitor.Worker.Scheduling;
 using DbExecPlanMonitor.Infrastructure;
 using Serilog;
 
@@ -32,19 +34,35 @@ try
     builder.Services.AddSqlServerMonitoring(builder.Configuration);
     builder.Services.AddMonitoringStorage(builder.Configuration);
     builder.Services.AddPlanCollection(builder.Configuration);
+    builder.Services.AddAnalysis(builder.Configuration);
+    builder.Services.AddAlerting(builder.Configuration);
+    builder.Services.AddRemediation(builder.Configuration);
     builder.Services.AddMonitoringValidation();
 
-    // Register the background worker service
-    builder.Services.AddHostedService<MonitoringWorker>();
+    // Register scheduling options
+    builder.Services.Configure<SchedulingOptions>(
+        builder.Configuration.GetSection(SchedulingOptions.SectionName));
+
+    // Register the background worker services
+    builder.Services.AddHostedService<PlanCollectionHostedService>();
+    builder.Services.AddHostedService<AnalysisHostedService>();
+    builder.Services.AddHostedService<BaselineRebuildHostedService>();
+    builder.Services.AddHostedService<DailySummaryHostedService>();
 
     // Add health checks for operational monitoring
-    builder.Services.AddHealthChecks();
+    builder.Services.AddHealthChecks()
+        .AddCheck<LivenessHealthCheck>("liveness", tags: new[] { "liveness" })
+        .AddCheck<StorageHealthCheck>("storage", tags: new[] { "readiness" })
+        .AddCheck<SqlServerHealthCheck>("sqlserver", tags: new[] { "readiness" });
 
     // Enable Windows Service hosting when running as a service
     builder.Services.AddWindowsService(options =>
     {
         options.ServiceName = "DbExecPlanMonitor";
     });
+
+    // Enable systemd hosting for Linux
+    builder.Services.AddSystemd();
 
     var host = builder.Build();
     await host.RunAsync();
