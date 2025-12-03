@@ -25,6 +25,9 @@
     <!-- Windows Service hosting support (UseWindowsService()) -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     
+    <!-- Linux systemd hosting support -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.1" />
+    
     <!-- Configuration from JSON files -->
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
     

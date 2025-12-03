@@ -91,6 +91,31 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Adds analysis services (regression detection, hotspots, baselines).
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddAnalysis(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Bind analysis configuration
+        services.Configure<AnalysisOptions>(
+            configuration.GetSection(AnalysisOptions.SectionName));
+
+        // Register domain services
+        services.AddSingleton<IRegressionDetector, RegressionDetector>();
+        services.AddSingleton<IHotspotDetector, HotspotDetector>();
+
+        // Register application services
+        services.AddSingleton<IBaselineService, BaselineService>();
+        services.AddSingleton<IAnalysisOrchestrator, AnalysisOrchestrator>();
+
+        return services;
+    }
+
+    /// <summary>
     /// Validates the monitoring configuration at startup.
     /// </summary>
     public static IServiceCollection AddMonitoringValidation(
