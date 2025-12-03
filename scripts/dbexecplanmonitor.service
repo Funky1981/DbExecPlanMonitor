@@ -1,0 +1,45 @@
+[Unit]
+Description=Database Execution Plan Monitor
+Documentation=https://github.com/Funky1981/DbExecPlanMonitor
+After=network.target
+
+[Service]
+Type=notify
+WorkingDirectory=/opt/dbexecplanmonitor
+ExecStart=/usr/bin/dotnet /opt/dbexecplanmonitor/DbExecPlanMonitor.Worker.dll
+Restart=always
+RestartSec=10
+
+# Security hardening
+User=dbmonitor
+Group=dbmonitor
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+
+# Environment
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dbexecplanmonitor
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+# Timeout settings
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
