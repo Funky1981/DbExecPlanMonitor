@@ -1,9 +1,12 @@
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+
 namespace DbExecPlanMonitor.Worker.Scheduling;
 
 /// <summary>
 /// Configuration options for the scheduling of background jobs.
 /// </summary>
-public sealed class SchedulingOptions
+public sealed class SchedulingOptions : IValidatableObject
 {
     /// <summary>
     /// Configuration section name in appsettings.json.
@@ -80,4 +83,31 @@ public sealed class SchedulingOptions
     /// Maximum backoff duration after repeated failures.
     /// </summary>
     public TimeSpan MaxFailureBackoff { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Validates option values to avoid accidental tight loops or invalid state.
+    /// </summary>
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (CollectionInterval <= TimeSpan.Zero)
+            yield return new ValidationResult("CollectionInterval must be greater than zero.", [nameof(CollectionInterval)]);
+
+        if (AnalysisInterval <= TimeSpan.Zero)
+            yield return new ValidationResult("AnalysisInterval must be greater than zero.", [nameof(AnalysisInterval)]);
+
+        if (BaselineRebuildTimeOfDay < TimeSpan.Zero || BaselineRebuildTimeOfDay >= TimeSpan.FromDays(1))
+            yield return new ValidationResult("BaselineRebuildTimeOfDay must be within a 24h day.", [nameof(BaselineRebuildTimeOfDay)]);
+
+        if (DailySummaryTimeOfDay < TimeSpan.Zero || DailySummaryTimeOfDay >= TimeSpan.FromDays(1))
+            yield return new ValidationResult("DailySummaryTimeOfDay must be within a 24h day.", [nameof(DailySummaryTimeOfDay)]);
+
+        if (MaxConsecutiveFailures <= 0)
+            yield return new ValidationResult("MaxConsecutiveFailures must be greater than zero.", [nameof(MaxConsecutiveFailures)]);
+
+        if (FailureBackoff <= TimeSpan.Zero)
+            yield return new ValidationResult("FailureBackoff must be greater than zero.", [nameof(FailureBackoff)]);
+
+        if (MaxFailureBackoff <= TimeSpan.Zero || MaxFailureBackoff < FailureBackoff)
+            yield return new ValidationResult("MaxFailureBackoff must be greater than zero and >= FailureBackoff.", [nameof(MaxFailureBackoff)]);
+    }
 }

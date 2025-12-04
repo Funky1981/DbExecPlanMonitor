@@ -5,50 +5,24 @@ This layer implements the database integration and data access functionality for
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DbExecPlanMonitor.Worker                      │
-│                   (Hosts the background service)                 │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ uses
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                 DbExecPlanMonitor.Application                    │
-│              IPlanStatisticsProvider, IPlanDetailsProvider       │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ implemented by
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                DbExecPlanMonitor.Infrastructure                  │
-│   ┌───────────────────────────────────────────────────────┐     │
-│   │              Data/SqlServer                           │     │
-│   │  ┌─────────────────────────────────────────────────┐ │     │
-│   │  │  ISqlConnectionFactory → SqlConnectionFactory   │ │     │
-│   │  │  IPlanStatisticsProvider → DmvPlanStatsProvider │ │     │
-│   │  │  IPlanDetailsProvider → DmvPlanDetailsProvider  │ │     │
-│   │  └─────────────────────────────────────────────────┘ │     │
-│   │  ┌─────────────────────────────────────────────────┐ │     │
-│   │  │  DmvQueries.cs - DMV SQL templates              │ │     │
-│   │  │  QueryStoreQueries.cs - Query Store SQL         │ │     │
-│   │  └─────────────────────────────────────────────────┘ │     │
-│   │  ┌─────────────────────────────────────────────────┐ │     │
-│   │  │  Models/                                        │ │     │
-│   │  │   - DatabaseInstanceConfig                      │ │     │
-│   │  │   - DmvQueryStatsRecord                         │ │     │
-│   │  │   - QueryStoreRecord                            │ │     │
-│   │  └─────────────────────────────────────────────────┘ │     │
-│   └───────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────┘
-                             │ queries
-                             ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      SQL Server DMVs                             │
-│  sys.dm_exec_query_stats │ sys.dm_exec_sql_text                 │
-│  sys.dm_exec_query_plan  │ sys.dm_exec_cached_plans             │
-├─────────────────────────────────────────────────────────────────┤
-│                    Query Store (if enabled)                      │
-│  sys.query_store_query    │ sys.query_store_plan                │
-│  sys.query_store_runtime_stats │ sys.query_store_query_text     │
-└─────────────────────────────────────────────────────────────────┘
+ DbExecPlanMonitor.Worker  --> hosts background services
+       |
+       v
+ DbExecPlanMonitor.Application  --> interfaces: IPlanStatisticsProvider, IPlanDetailsProvider, repositories, orchestration
+       |
+       v
+ DbExecPlanMonitor.Infrastructure  --> SQL Server implementations
+         - Data/SqlServer
+             * ISqlConnectionFactory -> SqlConnectionFactory
+             * IPlanStatisticsProvider -> DmvPlanStatisticsProvider
+             * IPlanDetailsProvider   -> DmvPlanDetailsProvider
+             * DmvQueries.cs / QueryStoreQueries.cs
+             * Models/
+               - DatabaseInstanceConfig
+               - DmvQueryStatsRecord
+               - QueryStoreRecord
+         - Persistence/ (Plan/Baseline/Fingerprint repositories)
+         - Messaging/ (Email/Slack/Teams)
 ```
 
 ## Key Components
@@ -102,18 +76,18 @@ Retrieves execution plan XML with:
 ```csharp
 public class DatabaseInstanceConfig
 {
-    public string Name { get; set; }           // Friendly name
-    public string ServerName { get; set; }     // Hostname/IP
+    public string Name { get; set; }
+    public string ServerName { get; set; }
     public int Port { get; set; } = 1433;
     public bool UseIntegratedSecurity { get; set; } = true;
     public List<string> DatabaseNames { get; set; }
     public int SamplingIntervalSeconds { get; set; } = 60;
     public bool PreferQueryStore { get; set; } = true;
-    // ... more options
+    public bool IsEnabled { get; set; } = true;
 }
 ```
 
-**`DmvQueryStatsRecord`** - Raw data from `sys.dm_exec_query_stats`
+**`DmvQueryStatsRecord`** - Raw data from `sys.dm_exec_query_stats`  
 **`QueryStoreRecord`** - Raw data from Query Store views
 
 ## Configuration
@@ -170,25 +144,25 @@ GRANT VIEW DATABASE STATE TO [MonitoringUser];
 
 ## DMV vs Query Store
 
-| Feature | DMVs | Query Store |
-|---------|------|-------------|
-| Persistence | Memory only (cleared on restart) | Persisted to disk |
-| History | Since last restart/cache clear | Configurable retention |
+| Feature   | DMVs                        | Query Store               |
+|-----------|----------------------------|---------------------------|
+| Persistence | Memory only | Persisted to disk |
+| History     | Since last restart/cache clear | Configurable retention |
 | Plan Forcing | Not supported | Supported |
-| Editions | All | Enterprise/Standard 2016+ |
-| Setup | None required | Must enable per database |
+| Editions    | All | Enterprise/Standard 2016+ |
+| Setup       | None required | Must enable per database |
 
 ## Error Handling
 
 The providers handle common SQL Server errors:
-- **Error 208** - Object doesn't exist (Query Store not available)
-- **Error 229** - Permission denied (escalates with helpful message)
+- Error 208 - object not found (Query Store not available)
+- Error 229 - permission denied (escalates with helpful message)
 - Connection timeouts with retry logic
 - Plan cache eviction (graceful null returns)
 
 ## Testing
 
-Unit tests mock `ISqlConnectionFactory` to test mapping logic.
+Unit tests mock `ISqlConnectionFactory` to test mapping logic.  
 Integration tests require a SQL Server instance with sample databases.
 
 See `DbExecPlanMonitor.Infrastructure.Tests` for examples.

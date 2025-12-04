@@ -72,6 +72,14 @@ public interface IPlanMetricsRepository
         CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the most recent sample for a fingerprint.
+    /// Used for delta calculations against cumulative DMV/Query Store counters.
+    /// </summary>
+    Task<PlanMetricSampleRecord?> GetLatestSampleForFingerprintAsync(
+        Guid fingerprintId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Gets aggregated statistics for a fingerprint over a time window.
     /// Returns min, max, avg, P50, P95 for each metric.
     /// </summary>
@@ -174,6 +182,11 @@ public sealed class AggregatedMetrics
     public required long MinLogicalReads { get; init; }
     public required long MaxLogicalReads { get; init; }
     public required long AvgLogicalReads { get; init; }
+    public long AvgLogicalWrites { get; init; }
+    public long? MaxLogicalWrites { get; init; }
+    public long AvgPhysicalReads { get; init; }
+    public long? AvgSpillsKb { get; init; }
+    public long? MaxSpillsKb { get; init; }
     
     /// <summary>
     /// Standard deviation of duration, useful for detecting inconsistent query performance.

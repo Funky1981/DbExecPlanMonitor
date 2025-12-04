@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPlanMetricsRepository, SqlPlanMetricsRepository>();
         services.AddSingleton<IBaselineRepository, SqlBaselineRepository>();
         services.AddSingleton<IRegressionEventRepository, SqlRegressionEventRepository>();
+        services.AddSingleton<ICumulativeMetricsSnapshotRepository, SqlCumulativeMetricsSnapshotRepository>();
 
         return services;
     }

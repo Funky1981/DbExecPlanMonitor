@@ -89,6 +89,11 @@ public sealed class BaselineService : IBaselineService
             // I/O metrics
             AvgLogicalReads = aggregated.AvgLogicalReads,
             MaxLogicalReads = aggregated.MaxLogicalReads,
+            AvgPhysicalReads = aggregated.AvgPhysicalReads,
+            AvgLogicalWrites = aggregated.AvgLogicalWrites,
+            MaxLogicalWrites = aggregated.MaxLogicalWrites,
+            AvgSpillsKb = aggregated.AvgSpillsKb,
+            MaxSpillsKb = aggregated.MaxSpillsKb,
             
             // Variance
             DurationStdDev = aggregated.DurationStdDev,
@@ -128,8 +133,10 @@ public sealed class BaselineService : IBaselineService
 
         try
         {
-            // Get all fingerprints for this database
-            var fingerprints = await _fingerprintRepository.GetByDatabaseAsync(databaseName, ct);
+            // Get all fingerprints for this specific instance and database
+            // Use instance-scoped lookup to prevent cross-instance collisions
+            var fingerprints = await _fingerprintRepository.GetByInstanceAndDatabaseAsync(
+                instanceName, databaseName, ct);
 
             foreach (var fingerprint in fingerprints)
             {

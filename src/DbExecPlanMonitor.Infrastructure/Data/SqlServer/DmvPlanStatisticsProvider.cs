@@ -216,6 +216,7 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
 
     /// <summary>
     /// Checks Query Store status using an open connection.
+    /// Distinguishes between "Query Store not available" (expected) and transient errors.
     /// </summary>
     private async Task<bool> IsQueryStoreEnabledDirectAsync(
         SqlConnection connection,
@@ -232,15 +233,69 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
             var result = await command.ExecuteScalarAsync(cancellationToken);
             return result != null && (int)result == 1;
         }
-        catch
+        catch (SqlException ex) when (ex.Number == 208) // Object doesn't exist
         {
+            // Query Store views don't exist - expected on older SQL Server versions
+            _logger.LogDebug(
+                "Query Store not available for database {Database}: system views do not exist",
+                connection.Database);
+            return false;
+        }
+        catch (SqlException ex) when (ex.Number == 229) // Permission denied
+        {
+            _logger.LogWarning(
+                "Permission denied checking Query Store status for database {Database}. Grant VIEW DATABASE STATE permission.",
+                connection.Database);
+            return false;
+        }
+        catch (SqlException ex) when (IsTransientError(ex))
+        {
+            // Transient error - log warning but don't fail silently
+            _logger.LogWarning(ex,
+                "Transient error checking Query Store status for database {Database}. Falling back to DMVs. Error: {ErrorNumber}",
+                connection.Database, ex.Number);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Unexpected error - log error for investigation
+            _logger.LogError(ex,
+                "Unexpected error checking Query Store status for database {Database}. Falling back to DMVs.",
+                connection.Database);
             return false;
         }
     }
 
     /// <summary>
+    /// Determines if a SQL exception is a transient error that may succeed on retry.
+    /// </summary>
+    private static bool IsTransientError(SqlException ex)
+    {
+        // Common transient error numbers
+        return ex.Number switch
+        {
+            -2 => true,    // Timeout
+            20 => true,    // Connection broken
+            64 => true,    // Network error
+            121 => true,   // Semaphore timeout
+            233 => true,   // Connection initialization error
+            10053 => true, // Connection forcibly closed
+            10054 => true, // Connection reset
+            10060 => true, // Connection timeout
+            40197 => true, // Service error processing request
+            40501 => true, // Service busy
+            40613 => true, // Database unavailable
+            49918 => true, // Cannot process request (too many operations)
+            49919 => true, // Cannot process create/update request
+            49920 => true, // Cannot process request (too many operations)
+            _ => false
+        };
+    }
+
+    /// <summary>
     /// Gets top queries from DMVs using an open connection.
     /// Applies lookback filtering using last_execution_time.
+    /// Includes query_plan_hash for plan tracking.
     /// </summary>
     private async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesFromDmvDirectAsync(
         SqlConnection connection,
@@ -267,7 +322,8 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
                 qs.total_logical_writes,
                 qs.total_logical_writes / qs.execution_count AS avg_logical_writes,
                 qs.plan_handle,
-                qs.last_execution_time
+                qs.last_execution_time,
+                qs.query_plan_hash
             FROM sys.dm_exec_query_stats qs
             CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
             WHERE qs.execution_count > 0
@@ -292,6 +348,7 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
 
     /// <summary>
     /// Gets top queries from Query Store using an open connection.
+    /// Includes query_id and plan_id for plan tracking.
     /// </summary>
     private async Task<IReadOnlyList<CollectedQueryStatistics>> GetTopQueriesFromQueryStoreDirectAsync(
         SqlConnection connection,
@@ -300,30 +357,57 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        // Use a CTE to get the best plan per query (most executions) and include IDs
         command.CommandText = $@"
+            WITH QueryStats AS (
+                SELECT 
+                    q.query_hash,
+                    q.query_id,
+                    p.plan_id,
+                    p.query_plan_hash,
+                    qt.query_sql_text,
+                    SUM(rs.count_executions) AS execution_count,
+                    SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_elapsed_time_ms,
+                    AVG(rs.avg_duration) / 1000.0 AS avg_elapsed_time_ms,
+                    SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_time_ms,
+                    AVG(rs.avg_cpu_time) / 1000.0 AS avg_cpu_time_ms,
+                    SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_logical_reads,
+                    AVG(rs.avg_logical_io_reads) AS avg_logical_reads,
+                    SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
+                    AVG(rs.avg_physical_io_reads) AS avg_physical_reads,
+                    SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_logical_writes,
+                    AVG(rs.avg_logical_io_writes) AS avg_logical_writes,
+                    MAX(rs.last_execution_time) AS last_execution_time,
+                    ROW_NUMBER() OVER (PARTITION BY q.query_hash ORDER BY SUM(rs.count_executions) DESC) AS rn
+                FROM sys.query_store_query q
+                JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+                JOIN sys.query_store_plan p ON q.query_id = p.query_id
+                JOIN sys.query_store_runtime_stats rs ON p.plan_id = rs.plan_id
+                JOIN sys.query_store_runtime_stats_interval rsi ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+                WHERE rsi.start_time >= @StartTime
+                  AND rsi.end_time <= @EndTime
+                GROUP BY q.query_hash, q.query_id, p.plan_id, p.query_plan_hash, qt.query_sql_text
+            )
             SELECT TOP (@TopN)
-                q.query_hash,
-                qt.query_sql_text,
-                SUM(rs.count_executions) AS execution_count,
-                SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_elapsed_time_ms,
-                AVG(rs.avg_duration) / 1000.0 AS avg_elapsed_time_ms,
-                SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_time_ms,
-                AVG(rs.avg_cpu_time) / 1000.0 AS avg_cpu_time_ms,
-                SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_logical_reads,
-                AVG(rs.avg_logical_io_reads) AS avg_logical_reads,
-                SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
-                AVG(rs.avg_physical_io_reads) AS avg_physical_reads,
-                SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_logical_writes,
-                AVG(rs.avg_logical_io_writes) AS avg_logical_writes,
-                MAX(rs.last_execution_time) AS last_execution_time
-            FROM sys.query_store_query q
-            JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-            JOIN sys.query_store_plan p ON q.query_id = p.query_id
-            JOIN sys.query_store_runtime_stats rs ON p.plan_id = rs.plan_id
-            JOIN sys.query_store_runtime_stats_interval rsi ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
-            WHERE rsi.start_time >= @StartTime
-              AND rsi.end_time <= @EndTime
-            GROUP BY q.query_hash, qt.query_sql_text
+                query_hash,
+                query_sql_text,
+                execution_count,
+                total_elapsed_time_ms,
+                avg_elapsed_time_ms,
+                total_cpu_time_ms,
+                avg_cpu_time_ms,
+                total_logical_reads,
+                avg_logical_reads,
+                total_physical_reads,
+                avg_physical_reads,
+                total_logical_writes,
+                avg_logical_writes,
+                last_execution_time,
+                query_id,
+                plan_id,
+                query_plan_hash
+            FROM QueryStats
+            WHERE rn = 1
             ORDER BY total_elapsed_time_ms DESC";
 
         command.CommandTimeout = 120;
@@ -344,11 +428,20 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
 
     /// <summary>
     /// Maps a DMV query result to CollectedQueryStatistics.
+    /// Includes query_plan_hash for plan tracking.
     /// </summary>
     private static CollectedQueryStatistics MapToCollectedStatistics(SqlDataReader reader)
     {
         var queryHashBytes = new byte[8];
         reader.GetBytes(0, 0, queryHashBytes, 0, 8);
+
+        // Read query_plan_hash (column 15)
+        byte[]? planHash = null;
+        if (!reader.IsDBNull(15))
+        {
+            planHash = new byte[8];
+            reader.GetBytes(15, 0, planHash, 0, 8);
+        }
 
         return new CollectedQueryStatistics
         {
@@ -366,17 +459,29 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
             TotalLogicalWrites = reader.GetInt64(11),
             AvgLogicalWrites = reader.GetDouble(12),
             PlanHandle = reader.IsDBNull(13) ? null : GetPlanHandle(reader, 13),
-            LastExecutionTimeUtc = reader.IsDBNull(14) ? null : reader.GetDateTime(14)
+            LastExecutionTimeUtc = reader.IsDBNull(14) ? null : reader.GetDateTime(14),
+            QueryPlanHash = planHash
         };
     }
 
     /// <summary>
     /// Maps a Query Store result to CollectedQueryStatistics.
+    /// Includes query_id, plan_id, and query_plan_hash for plan tracking.
     /// </summary>
     private static CollectedQueryStatistics MapQueryStoreToCollectedStatistics(SqlDataReader reader)
     {
         var queryHashBytes = new byte[8];
         reader.GetBytes(0, 0, queryHashBytes, 0, 8);
+
+        // Read Query Store IDs and plan hash
+        var queryId = reader.IsDBNull(14) ? (long?)null : reader.GetInt64(14);
+        var planId = reader.IsDBNull(15) ? (long?)null : reader.GetInt64(15);
+        byte[]? planHash = null;
+        if (!reader.IsDBNull(16))
+        {
+            planHash = new byte[8];
+            reader.GetBytes(16, 0, planHash, 0, 8);
+        }
 
         return new CollectedQueryStatistics
         {
@@ -393,7 +498,10 @@ public class DmvPlanStatisticsProvider : SqlDataReaderBase, IPlanStatisticsProvi
             AvgPhysicalReads = reader.GetDouble(10),
             TotalLogicalWrites = (long)reader.GetDouble(11),
             AvgLogicalWrites = reader.GetDouble(12),
-            LastExecutionTimeUtc = reader.IsDBNull(13) ? null : reader.GetDateTime(13)
+            LastExecutionTimeUtc = reader.IsDBNull(13) ? null : reader.GetDateTime(13),
+            QueryStoreQueryId = queryId,
+            QueryStorePlanId = planId,
+            QueryPlanHash = planHash
         };
     }
 

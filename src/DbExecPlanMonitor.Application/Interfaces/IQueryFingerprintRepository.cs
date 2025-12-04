@@ -56,9 +56,28 @@ public interface IQueryFingerprintRepository
 
     /// <summary>
     /// Gets all fingerprints for a specific database.
+    /// Note: For multi-instance environments, use GetByInstanceAndDatabaseAsync instead.
     /// </summary>
     Task<IReadOnlyList<QueryFingerprintRecord>> GetByDatabaseAsync(
         string databaseName,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all fingerprints for a specific instance and database.
+    /// This prevents collisions when the same database name exists across multiple instances.
+    /// </summary>
+    Task<IReadOnlyList<QueryFingerprintRecord>> GetByInstanceAndDatabaseAsync(
+        string instanceName,
+        string databaseName,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets a fingerprint by its query hash scoped to an instance.
+    /// This prevents collisions when the same query runs on multiple instances.
+    /// </summary>
+    Task<QueryFingerprintRecord?> GetByHashAsync(
+        string instanceName,
+        byte[] queryHash,
         CancellationToken ct = default);
 
     /// <summary>

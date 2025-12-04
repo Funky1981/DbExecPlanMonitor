@@ -243,6 +243,56 @@ END
 GO
 
 -- ============================================================================
+-- Table: monitoring.CumulativeMetricsSnapshot
+-- Purpose: Tracks last-seen cumulative counters for delta calculation
+-- ============================================================================
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'CumulativeMetricsSnapshot' AND schema_id = SCHEMA_ID('monitoring'))
+BEGIN
+    CREATE TABLE monitoring.CumulativeMetricsSnapshot
+    (
+        Id                  UNIQUEIDENTIFIER    NOT NULL DEFAULT NEWSEQUENTIALID(),
+        InstanceName        NVARCHAR(256)       NOT NULL,
+        DatabaseName        NVARCHAR(128)       NOT NULL,
+        FingerprintId       UNIQUEIDENTIFIER    NOT NULL,
+        PlanHash            VARBINARY(32)       NULL,
+        SnapshotTimeUtc     DATETIME2(3)        NOT NULL,
+        
+        -- Cumulative execution count
+        ExecutionCount      BIGINT              NOT NULL,
+        
+        -- Cumulative CPU time (microseconds)
+        TotalCpuTimeUs      BIGINT              NOT NULL,
+        
+        -- Cumulative duration (microseconds)
+        TotalDurationUs     BIGINT              NOT NULL,
+        
+        -- Cumulative I/O
+        TotalLogicalReads   BIGINT              NOT NULL,
+        TotalLogicalWrites  BIGINT              NOT NULL DEFAULT 0,
+        TotalPhysicalReads  BIGINT              NOT NULL DEFAULT 0,
+        
+        CONSTRAINT PK_CumulativeMetricsSnapshot PRIMARY KEY CLUSTERED (Id),
+        CONSTRAINT FK_CumulativeMetricsSnapshot_Fingerprint 
+            FOREIGN KEY (FingerprintId) REFERENCES monitoring.QueryFingerprint(Id)
+    );
+
+    -- Unique constraint for lookup: one snapshot per instance/db/fingerprint/plan
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_CumulativeMetricsSnapshot_Lookup 
+        ON monitoring.CumulativeMetricsSnapshot (InstanceName, DatabaseName, FingerprintId, PlanHash)
+        WHERE PlanHash IS NOT NULL;
+
+    -- Separate unique index for NULL PlanHash (filtered index workaround)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_CumulativeMetricsSnapshot_LookupNullPlan 
+        ON monitoring.CumulativeMetricsSnapshot (InstanceName, DatabaseName, FingerprintId)
+        WHERE PlanHash IS NULL;
+
+    -- Index for purging old snapshots
+    CREATE NONCLUSTERED INDEX IX_CumulativeMetricsSnapshot_SnapshotTime 
+        ON monitoring.CumulativeMetricsSnapshot (SnapshotTimeUtc);
+END
+GO
+
+-- ============================================================================
 -- Stored Procedure: monitoring.usp_GetOrCreateFingerprint
 -- Purpose: Atomically gets or creates a fingerprint (upsert pattern)
 -- ============================================================================

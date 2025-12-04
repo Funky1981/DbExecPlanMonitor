@@ -18,6 +18,7 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
     private readonly IQueryFingerprintService _fingerprintService;
     private readonly IQueryFingerprintRepository _fingerprintRepository;
     private readonly IPlanMetricsRepository _metricsRepository;
+    private readonly ICumulativeMetricsSnapshotRepository _snapshotRepository;
     private readonly ILogger<PlanCollectionOrchestrator> _logger;
 
     public PlanCollectionOrchestrator(
@@ -27,6 +28,7 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
         IQueryFingerprintService fingerprintService,
         IQueryFingerprintRepository fingerprintRepository,
         IPlanMetricsRepository metricsRepository,
+        ICumulativeMetricsSnapshotRepository snapshotRepository,
         ILogger<PlanCollectionOrchestrator> logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -35,6 +37,7 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
         _fingerprintService = fingerprintService ?? throw new ArgumentNullException(nameof(fingerprintService));
         _fingerprintRepository = fingerprintRepository ?? throw new ArgumentNullException(nameof(fingerprintRepository));
         _metricsRepository = metricsRepository ?? throw new ArgumentNullException(nameof(metricsRepository));
+        _snapshotRepository = snapshotRepository ?? throw new ArgumentNullException(nameof(snapshotRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -292,29 +295,114 @@ public sealed class PlanCollectionOrchestrator : IPlanCollectionOrchestrator
                     newFingerprints++;
                 }
 
-                // Create and save metrics sample
-                // Convert milliseconds to microseconds for storage
+                // Convert cumulative values from milliseconds to microseconds
+                var currentCpuUs = (long)(stat.TotalCpuTimeMs * 1000);
+                var currentDurationUs = (long)(stat.TotalElapsedTimeMs * 1000);
+
+                // Fetch previous cumulative snapshot for delta calculation
+                var previousSnapshot = await _snapshotRepository.GetLastSnapshotAsync(
+                    instanceConfig.Name,
+                    dbConfig.Name,
+                    fingerprintResult.Id,
+                    stat.QueryPlanHash,
+                    ct);
+
+                DeltaMetrics delta;
+
+                // Compute delta or use current values if no previous snapshot
+                if (previousSnapshot != null)
+                {
+                    delta = previousSnapshot.ComputeDelta(
+                        stat.ExecutionCount,
+                        currentCpuUs,
+                        currentDurationUs,
+                        stat.TotalLogicalReads,
+                        stat.TotalLogicalWrites,
+                        stat.TotalPhysicalReads);
+
+                    if (delta.WasReset)
+                    {
+                        _logger.LogDebug(
+                            "Counter reset detected for fingerprint {FingerprintId} on {Instance}/{Database}",
+                            fingerprintResult.Id, instanceConfig.Name, dbConfig.Name);
+                    }
+                }
+                else
+                {
+                    // First observation - use current cumulative values as delta
+                    delta = new DeltaMetrics
+                    {
+                        ExecutionCountDelta = stat.ExecutionCount,
+                        CpuTimeUsDelta = currentCpuUs,
+                        DurationUsDelta = currentDurationUs,
+                        LogicalReadsDelta = stat.TotalLogicalReads,
+                        LogicalWritesDelta = stat.TotalLogicalWrites,
+                        PhysicalReadsDelta = stat.TotalPhysicalReads,
+                        WasReset = false
+                    };
+                }
+
+                if (delta.ExecutionCountDelta <= 0 && delta.CpuTimeUsDelta <= 0 && delta.DurationUsDelta <= 0)
+                {
+                    // Nothing new to record since last snapshot
+                    continue;
+                }
+
+                var avgCpuDeltaUs = delta.ExecutionCountDelta > 0
+                    ? delta.CpuTimeUsDelta / delta.ExecutionCountDelta
+                    : (long)(stat.AvgCpuTimeMs * 1000);
+
+                var avgDurationDeltaUs = delta.ExecutionCountDelta > 0
+                    ? delta.DurationUsDelta / delta.ExecutionCountDelta
+                    : (long)(stat.AvgElapsedTimeMs * 1000);
+
+                var avgLogicalReadsDelta = delta.ExecutionCountDelta > 0
+                    ? delta.LogicalReadsDelta / delta.ExecutionCountDelta
+                    : (long)stat.AvgLogicalReads;
+
+                // Create metrics sample with computed delta
                 var metrics = new PlanMetricSampleRecord
                 {
                     FingerprintId = fingerprintResult.Id,
                     InstanceName = instanceConfig.Name,
                     DatabaseName = dbConfig.Name,
                     SampledAtUtc = DateTime.UtcNow,
-                    ExecutionCount = stat.ExecutionCount,
-                    TotalCpuTimeUs = (long)(stat.TotalCpuTimeMs * 1000),
-                    AvgCpuTimeUs = (long)(stat.AvgCpuTimeMs * 1000),
-                    TotalDurationUs = (long)(stat.TotalElapsedTimeMs * 1000),
-                    AvgDurationUs = (long)(stat.AvgElapsedTimeMs * 1000),
-                    TotalLogicalReads = stat.TotalLogicalReads,
-                    AvgLogicalReads = (long)stat.AvgLogicalReads,
-                    TotalLogicalWrites = stat.TotalLogicalWrites,
-                    TotalPhysicalReads = stat.TotalPhysicalReads,
-                    // Populate plan details from provider
-                    PlanHash = stat.PlanHandle // PlanHandle can serve as plan identifier
+                    ExecutionCount = delta.ExecutionCountDelta,
+                    ExecutionCountDelta = delta.ExecutionCountDelta,
+                    TotalCpuTimeUs = delta.CpuTimeUsDelta,
+                    AvgCpuTimeUs = avgCpuDeltaUs,
+                    TotalDurationUs = delta.DurationUsDelta,
+                    AvgDurationUs = avgDurationDeltaUs,
+                    TotalLogicalReads = delta.LogicalReadsDelta,
+                    AvgLogicalReads = avgLogicalReadsDelta,
+                    TotalLogicalWrites = delta.LogicalWritesDelta,
+                    TotalPhysicalReads = delta.PhysicalReadsDelta,
+                    // Populate plan identifiers from provider
+                    PlanHash = stat.QueryPlanHash,
+                    QueryStoreQueryId = stat.QueryStoreQueryId,
+                    QueryStorePlanId = stat.QueryStorePlanId
                 };
 
                 await _metricsRepository.SaveSampleAsync(instanceConfig.Name, metrics, ct);
                 samplesSaved++;
+
+                // Update cumulative snapshot for next delta calculation
+                var newSnapshot = new CumulativeMetricsSnapshot
+                {
+                    InstanceName = instanceConfig.Name,
+                    DatabaseName = dbConfig.Name,
+                    FingerprintId = fingerprintResult.Id,
+                    PlanHash = stat.QueryPlanHash,
+                    SnapshotTimeUtc = DateTime.UtcNow,
+                    ExecutionCount = stat.ExecutionCount,
+                    TotalCpuTimeUs = currentCpuUs,
+                    TotalDurationUs = currentDurationUs,
+                    TotalLogicalReads = stat.TotalLogicalReads,
+                    TotalLogicalWrites = stat.TotalLogicalWrites,
+                    TotalPhysicalReads = stat.TotalPhysicalReads
+                };
+
+                await _snapshotRepository.SaveSnapshotAsync(newSnapshot, ct);
             }
 
             stopwatch.Stop();

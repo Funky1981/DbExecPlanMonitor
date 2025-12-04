@@ -326,6 +326,21 @@ public class CollectedQueryStatistics
     public byte[]? PlanHandle { get; init; }
 
     /// <summary>
+    /// SQL Server's plan hash (binary, 8 bytes) - identifies the specific execution plan.
+    /// </summary>
+    public byte[]? QueryPlanHash { get; init; }
+
+    /// <summary>
+    /// Query Store query_id (if collected from Query Store).
+    /// </summary>
+    public long? QueryStoreQueryId { get; init; }
+
+    /// <summary>
+    /// Query Store plan_id (if collected from Query Store).
+    /// </summary>
+    public long? QueryStorePlanId { get; init; }
+
+    /// <summary>
     /// Execution plan XML if already retrieved.
     /// </summary>
     public string? QueryPlanXml { get; init; }
