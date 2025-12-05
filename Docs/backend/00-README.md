@@ -26,6 +26,7 @@ Each file is intended to be consumed **in order** by a developer and/or coding A
 13. `13-testing-strategy-and-demo-environment.md` – Unit, integration, and safe demo.
 14. `14-deployment-operations-and-rollout-plan.md` – How to ship and operate this.
 15. `15-learning-path-and-next-steps.md` – How to use this project as a learning tool.
+16. `16-ai-paired-build-walkthrough.md` – Step-by-step build sequence with AI prompts so you stay in control.
 
 ## How to Use This Pack
 
